@@ -36,10 +36,28 @@ from .utils.competitive_programming import patch_code as cf_patch_code
 from .utils.competitive_programming import score_submission as cf_score_submission
 from .utils.competitive_programming import score_subtask
 
+from construct_graph_score import construct_graph_and_score
+
+def structure_reward(completions, **kwargs):
+    rewards = []
+
+    contents = [completion[0]["content"] for completion in completions]
+    for content in contents:
+        try:
+            reward = construct_graph_and_score(content)
+            rewards.append(reward)
+        except Exception as e:
+            print(f"Error constructing graph and scoring reward: {e}")
+            rewards.append(0)  # or some default value in case of error
+
+    return rewards
+
 
 def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str], **kwargs) -> list[Optional[float]]:
     """Reward function that checks if the completion is the same as the ground truth."""
     contents = [completion[0]["content"] for completion in completions]
+    # print(f"contents:{contents}")
+    # print(f"solution{solution}")
     rewards = []
     for content, sol in zip(contents, solution):
         gold_parsed = parse(
@@ -94,12 +112,12 @@ import re
 def format_reward(completions, **kwargs):
     """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags,
     the final answer is enclosed within <answer> and </answer> tags, 
-    and at least one of the four reasoning labels (<Generate>, <Aggregate>, <Feedback>, <Refine>) 
+    and at least one of the four reasoning labels (<generate>, <aggregate>, <feedback>, <refine>, <associative thinking>, <reverse thinking>, <known>) 
     appears inside <think>...</think>."""
     
     pattern = (
         r"^<think>.*?"
-        r"(<Generate>.*?</Generate>|<Aggregate>.*?</Aggregate>|<Feedback>.*?</Feedback>|<Refine>.*?</Refine>)"
+        r"(<generate>.*?</generate>|<aggregate>.*?</aggregate>|<feedback>.*?</feedback>|<refine>.*?</refine>)|<associative thinking>.*?</associative thinking>|<reverse thinking>.*?</reverse thinking>|<known>.*?</known>"
         r".*?</think>\n<answer>\n.*?\n</answer>$"
     )
     
@@ -138,13 +156,15 @@ def tag_count_reward(completions, **kwargs) -> list[float]:
     def count_tags(text: str) -> float:
         count = 0.0
         if text.count("<think>\n") == 1:
-            count += 0.25
+            count += 0.20
         if text.count("\n</think>\n") == 1:
-            count += 0.25
+            count += 0.20
         if text.count("\n<answer>\n") == 1:
-            count += 0.25
+            count += 0.20
         if text.count("\n</answer>") == 1:
-            count += 0.25
+            count += 0.20
+        if text.count("<generate>") + text.count("</generate>") + text.count("<aggregate>") + text.count("</aggregate>") + text.count("<feedback>") + text.count("</feedback>") + text.count("<refine>") + text.count("</refine>") + text.count("<associative thinking>") + text.count("</associative thinking>") + text.count("<reverse thinking>") + text.count("</reverse thinking>") >= 2:
+            count += 0.20
         return count
 
     contents = [completion[0]["content"] for completion in completions]
@@ -684,6 +704,7 @@ def get_soft_overlong_punishment(max_completion_len, soft_punish_cache):
 
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
+        "structure": structure_reward,
         "accuracy": accuracy_reward,
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
