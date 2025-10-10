@@ -30,9 +30,10 @@ system_prompt: |
       parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
       content:The content of this step
   }
+  If a tag contains multiple nodes, the parents of these nodes must be same.
   For the content wrapped in different tags, there are the following formal requirements:
   - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
-  - generate:It wraps one or more nodes, and the parents of these nodes should be the same single node.
+  - generate:(1) It wraps one node, and the parents of this nodes should be a single node. (2) It wraps two or more nodes, and the parents of these nodes should be a same single node. (3) It wraps two or more nodes, and the parents of these nodes should be mutiple nodes that are the same.
   - aggregate：It wraps one node, and the parent of this node should be multiple nodes.
   - feedback：It wraps one node, and the parent of this node should be one or more nodes.
   - refine:It wraps one node, and the parent of this node should be a single node.
@@ -185,6 +186,8 @@ system_prompt: |
     70
 
   </answer>
+
+  The example is only provided for farmat reference to you.
 
 # GRPO trainer config
 bf16: true

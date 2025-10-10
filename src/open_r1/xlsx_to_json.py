@@ -34,9 +34,9 @@ def xlsx_to_json(xlsx_file_path, json_file_path=None):
 # 使用示例
 if __name__ == "__main__":
     # 替换为你的xlsx文件路径
-    xlsx_path = "result_data_100.xlsx"
+    xlsx_path = "result_data.xlsx"
     # 可选：指定输出json文件路径，不指定则默认与xlsx同目录
-    json_path = "result_data_100.json"
+    json_path = "result_data.json"
     
     # 调用转换函数
     xlsx_to_json(xlsx_path, json_path)

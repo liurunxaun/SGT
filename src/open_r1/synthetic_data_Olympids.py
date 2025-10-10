@@ -224,8 +224,8 @@ def main():
         client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
         outputs = []
 
-        start = 1000
-        end = 1500
+        start = 1500
+        end = 2000
         if start < 0 or end >= len(df) or start > end:
             print(f"索引无效！请确保 0≤start≤end<{len(df)}")
             return
