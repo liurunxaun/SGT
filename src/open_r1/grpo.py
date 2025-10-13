@@ -109,6 +109,7 @@ def main(script_args, training_args, model_args):
     #############################
     # Initialize the GRPO trainer
     #############################
+    print("GRPOTrainer")
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=reward_funcs,

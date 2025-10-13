@@ -7,55 +7,188 @@ attn_implementation: flash_attention_2
 # Data training arguments
 # We edit the DeepSeek chat template to ensure (a) the reasoning block within <think> and </think> is included in the completion and (b) the <think> tag is not part of the prefill so that the format reward works
 chat_template: "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=false, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{% set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{{ns.system_prompt}}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- set ns.is_tool = false -%}{{'<｜User｜>' + message['content']}}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is none %}{%- set ns.is_tool = false -%}{%- for tool in message['tool_calls']%}{%- if not ns.is_first %}{{'<｜Assistant｜><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{%- set ns.is_first = true -%}{%- else %}{{'\\n' + '<｜tool▁call▁begin｜>' + tool['type'] + '<｜tool▁sep｜>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<｜tool▁call▁end｜>'}}{{'<｜tool▁calls▁end｜><｜end▁of▁sentence｜>'}}{%- endif %}{%- endfor %}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is not none %}{%- if ns.is_tool %}{{'<｜tool▁outputs▁end｜>' + message['content'] + '<｜end▁of▁sentence｜>'}}{%- set ns.is_tool = false -%}{%- else %}{% set content = message['content'] %}{{'<｜Assistant｜>' + content + '<｜end▁of▁sentence｜>'}}{%- endif %}{%- endif %}{%- if message['role'] == 'tool' %}{%- set ns.is_tool = true -%}{%- if ns.is_output_first %}{{'<｜tool▁outputs▁begin｜><｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- set ns.is_output_first = false %}{%- else %}{{'\\n<｜tool▁output▁begin｜>' + message['content'] + '<｜tool▁output▁end｜>'}}{%- endif %}{%- endif %}{%- endfor -%}{% if ns.is_tool %}{{'<｜tool▁outputs▁end｜>'}}{% endif %}{% if add_generation_prompt and not ns.is_tool %}{{'<｜Assistant｜>'}}{% endif %}"
-dataset_name: /ssd5/rxliu/datasets/AIME24/data
+dataset_name: /ssd5/rxliu/datasets/Olympiads
 dataset_prompt_column: problem
 # system_prompt: "You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>"
 system_prompt: |
-  You are a helpful AI Assistant that provides well-reasoned and detailed responses.
-  When replying, produce exactly two blocks in this format (with newlines as shown):
+  You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>
 
+  Besides, you must comply with below conditions:
+  1.During the <think> phase you should organize the chain of thought using below tags:
+  - known: known conditions that can be found in the query
+  - generate: from the current node, generate one or more new node(s).
+  - aggregate: merge multiple nodes or jointly reason over them to produce a new node.
+  - feedback: go back to a previous node.
+  - refine: improve the current node.
+  - associative thinking: comparing the curent reasoning graph structure with other similar graph structures, in order to facilitate the current reasoning process. For example, when solving a math problem, recalling the solution methods used in previous similar problems.
+  - reverse thinking: starting from the goal of the problem, considering possible solution paths, and filtering them with the given conditions. This builds a reverse reasoning path from the goal to the conditions, from the unknown to the known, leading to the final answer.
+  At each further reasoning step you must choose one of these seven tags and wrap that step’s output with the chosen tag. For example: <Generate>...</Generate>
+  2.The tag content inside is a series of thinking steps, organized in a node based manner with node_id and parents. You need to ensure that the thinking process is coherent and effective, and ultimately these nodes can be organized into a directed graph. The format example for each node is as follows:
+  {
+      node_id:The unique identifier of a node, usually an integer, increasing from 1.
+      parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
+      content:The content of this step
+  }
+  If a tag contains multiple nodes, the parents of these nodes must be same.
+  For the content wrapped in different tags, there are the following formal requirements:
+  - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
+  - generate:(1) It wraps one node, and the parents of this nodes should be a single node. (2) It wraps two or more nodes, and the parents of these nodes should be a same single node. (3) It wraps two or more nodes, and the parents of these nodes should be mutiple nodes that are the same.
+  - aggregate：It wraps one node, and the parent of this node should be multiple nodes.
+  - feedback：It wraps one node, and the parent of this node should be one or more nodes.
+  - refine:It wraps one node, and the parent of this node should be a single node.
+  - associative thinking：It wraps one node, and the parent of this node should be one or more nodes.
+  - reverse thinking：It wraps one node, and the parent of this node should be one or more nodes.
+  If a tag contains multiple nodes, the nodes should be separated by commas. Within a node, different fields do not require commas and should be separated by line breaks. 
+
+  Below I’ll give you an example:
+  query：Find the sum of all integer bases b>9 for which 17_{b} is a divisor of 97_{b}
   <think>
-  ...structured DAG-style internal reasoning (see conventions below)...
+
+    <known>
+
+      {
+        node_id:1
+        parents:none
+        content:b>9 
+      },
+
+      {
+        node_id:2
+        parents:none
+        content:17_{b} is a divisor of 97_{b} 
+      },
+
+      {
+        node_id:3
+        parents:none
+        content:b is an integer
+      }
+
+    </known>
+
+    <generate>
+
+      {
+        node_id:4
+        parents:2
+        content:17_{b}=b+7
+      },
+
+      {
+        node_id:5
+        parents:2
+        content:97_{b}=9*b+7
+      },
+
+    </generate>
+
+    <aggeregate>
+
+      {
+        node_id:6
+        parents:2,4,5
+        content: 9*b+7=k(b+7)，k>0,k is an integer
+      },
+
+    </aggeregate>
+
+    <refine>
+
+      {
+        node_id:7
+        parents:6
+        content:b=(7-7k)/(k-9),1<k<9,k is an integer
+      }
+
+    </refine>
+    
+    <associative thinking>
+    
+      {
+        node_id:8
+        parents:7
+        content:When dealing with this type of problem before, I used the enumeration method, and I can apply the same method here as well.
+      }
+      
+    </associative thinking>
+
+    <generate>
+
+      {
+        node_id:9
+        parents:1,7
+        content:if k=2,b=1,false.
+      },
+
+      {
+        node_id:10
+        parents:1,3,7
+        content:2. if k=3,b=14/6,false.
+      },
+
+      {
+        node_id:11
+        parents:1,3,7
+        content:if k=4,b=21/5,false.
+      },
+
+      {
+        node_id:12
+        parents:1,7
+        content:if k=5,b=7,false.
+      },
+
+      {
+        node_id:13
+        parents:3,7
+        content:if k=6,b=35/3,false.
+      },
+
+      {
+        node_id:14
+        parents:7
+        content:if k=7,b=21,true. 
+      },
+
+      {
+        node_id:15
+        parents:7
+        content:if k=8,b=49,true.
+      }
+
+    </generate>
+
+    <feedback>
+
+      {
+        node_id:16
+        parents:6,14
+        content:But wait: Also b+7=? and 9*b+7=? Possibly b+7=56 and 9*b+7=448? 448/56=8 Yes.
+      }
+
+    </feedback>
+
+    <aggeregate>
+
+      {
+        node_id:17
+        parents:9,10,11,12,13,14,15
+        content:Sum=21+49=70
+      }
+
+    </aggeregate>
+
   </think>
+
   <answer>
-  ...concise user-facing final answer...
+
+    70
+
   </answer>
 
-  CONVENTIONS for the <think> block (represent internal reasoning as a directed acyclic graph):
-
-  1. Nodes:
-     - Represent each reasoning state as a node using:
-       <Node id="nX">
-       <content>
-       Short summary of the node's state (one brief paragraph).
-       </content>
-       <parents>comma-separated parent node IDs (optional)</parents>
-       </Node>
-     - Node ids must be unique (n0, n1, ...). Use the same ids when referring to parents.
-
-  2. Operations:
-     - When you perform an operation, include the exact operation tags:
-       <Generate> ... </Generate>
-       <Aggregate> ... </Aggregate>
-       <Feedback> ... </Feedback>
-       <Refine> ... </Refine>
-     - Each operation block should describe which node(s) it reads from and which node(s) it produces or modifies.
-     - Example usage patterns (use one or more as needed, any order, any number of times):
-       - <Generate> creates new <Node id="..."> blocks and sets their <parents>.
-       - <Aggregate> merges several existing nodes and produces a new <Node>.
-       - <Feedback> indicates returning to/revising an earlier node (reference its id).
-       - <Refine> improves the content of an existing node (include the updated <Node> with same id).
-
-  3. Graph rules:
-     - The structure should form a DAG (avoid cycles).
-     - Operations may appear in any order and can be repeated.
-     - Keep each <content> concise (1–3 short sentences).
-     - Use newlines exactly after opening and before closing tags so that the outer <think> and <answer> blocks are on their own lines.
-
-  4. Final answer:
-     - After finishing the <think> block, provide a concise <answer> block that contains only the final user-facing answer (do not repeat internal reasoning).
-
-  Be consistent and machine-friendly in tag usage so that the reasoning graph can be parsed automatically.
+  The example is only provided for format reference to you.
+  But you must follow the format of the example.
+  Everything you want to say must be packed in labels we defined, specifically in "content" of each node.
 
 # GRPO trainer config
 bf16: true
@@ -77,22 +210,24 @@ lr_scheduler_type: cosine_with_min_lr
 lr_scheduler_kwargs:
   min_lr_rate: 0.1
 max_prompt_length: 2048
-max_completion_length: 2048
+max_completion_length: 8192
 max_steps: -1
-num_generations: 4
+num_generations: 2
 num_train_epochs: 1
 output_dir: /data/home/the/rxliu/projects/open-r1-main/output/DeepSeek-R1-0528-Qwen3-8B-AIME24-GRPO-Label_only
 overwrite_output_dir: true
-per_device_eval_batch_size: 16
-per_device_train_batch_size: 4
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 2
 push_to_hub: false
-# report_to:
+report_to:
 # - wandb
 reward_funcs:
+- structure
 - accuracy
 - format
 - tag_count
 reward_weights:
+- 1.0
 - 1.0
 - 1.0
 - 1.0

@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: /ssd5/rxliu/models/Qwen3-0.6B
+model_name_or_path: /data/home/the/rxliu/projects/open-r1-main/output/qwen3-0.6B-SFT
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
@@ -187,7 +187,9 @@ system_prompt: |
 
   </answer>
 
-  The example is only provided for farmat reference to you.
+  The example is only provided for format reference to you.
+  But you must follow the format of the example.
+  Everything you want to say must be packed in labels we defined, specifically in "content" of each node.
 
 # GRPO trainer config
 bf16: true
@@ -219,7 +221,7 @@ per_device_eval_batch_size: 1
 per_device_train_batch_size: 2
 push_to_hub: false
 report_to:
-# - wandb
+- wandb
 reward_funcs:
 - structure
 - accuracy
