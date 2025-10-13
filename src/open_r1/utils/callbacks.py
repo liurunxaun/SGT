@@ -77,16 +77,55 @@ class PushToHubRevisionCallback(TrainerCallback):
                 future.add_done_callback(run_benchmark_callback)
 
 
+class WandbTrainingCallback(TrainerCallback):
+    """
+    Custom callback for logging metrics to Weights & Biases during training.
+    """
+
+    def __init__(self):
+        import wandb
+        self.wandb = wandb
+        if not wandb.run:
+            wandb.init()
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """Log metrics like loss, learning rate, etc. to W&B"""
+        if not self.wandb.run:
+            return
+
+        if logs:
+            # Attach step info to each log
+            self.wandb.log(logs, step=state.global_step)
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        """Mark the beginning of training."""
+        if self.wandb.run:
+            self.wandb.log({"train/start_step": state.global_step})
+
+    def on_train_end(self, args, state, control, **kwargs):
+        """Mark the end of training."""
+        if self.wandb.run:
+            self.wandb.log({"train/total_steps": state.global_step})
+            self.wandb.finish()
+
+
 CALLBACKS = {
     "push_to_hub_revision": PushToHubRevisionCallback,
+    "wandb": WandbTrainingCallback,
 }
 
 
-def get_callbacks(train_config, model_config) -> List[TrainerCallback]:
+def get_callbacks(train_config, model_config):
+    from transformers import TrainerCallback
     callbacks = []
+
     for callback_name in train_config.callbacks:
         if callback_name not in CALLBACKS:
             raise ValueError(f"Callback {callback_name} not found in CALLBACKS.")
-        callbacks.append(CALLBACKS[callback_name](model_config))
+        # 注意 wandb 不需要 model_config 参数
+        if callback_name == "wandb":
+            callbacks.append(WandbTrainingCallback())
+        else:
+            callbacks.append(CALLBACKS[callback_name](model_config))
 
     return callbacks

@@ -106,6 +106,7 @@ def main(script_args, training_args, model_args):
         if "messages" in dataset[split].column_names:
             dataset[split] = dataset[split].remove_columns("messages")
 
+
     #############################
     # Initialize the GRPO trainer
     #############################
