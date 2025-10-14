@@ -193,7 +193,7 @@ system_prompt: |
 
 # GRPO trainer config
 bf16: true
-use_vllm: false
+use_vllm: true
 do_eval: false
 gradient_accumulation_steps: 4
 gradient_checkpointing: true
@@ -217,8 +217,8 @@ num_generations: 8
 num_train_epochs: 1
 output_dir: /data/home/the/rxliu/projects/open-r1-main/output/Qwen3-0.6B-GRPO-Olympiads
 overwrite_output_dir: true
-per_device_eval_batch_size: 8
-per_device_train_batch_size: 8
+per_device_eval_batch_size: 16
+per_device_train_batch_size: 4
 push_to_hub: false
 report_to:
 - wandb
@@ -232,8 +232,9 @@ reward_weights:
 - 1.0
 - 1.0
 - 1.0
-save_strategy: "epoch"
-save_total_limit: 1
+save_strategy: "steps"
+save_steps: 500
+save_total_limit: 5
 seed: 42
 temperature: 0.7
 use_liger_kernel: true
