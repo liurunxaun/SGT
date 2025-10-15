@@ -7,34 +7,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import pandas as pd
 import re
-import requests
 import datetime
 import os
-
-
-def llm_judge_via_api(answer, ground_truth, api_url, api_key, judge_model_name):
-    prompt = (
-        f"You are a math evaluator. Compare the two answers and respond with exactly "
-        f"'correct' or 'incorrect'.\n\n"
-        f"Ground truth: {ground_truth}\n"
-        f"Model answer: {answer}\n"
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    data = {
-        "model": judge_model_name,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-    resp = requests.post(api_url, headers=headers, json=data)
-    resp.raise_for_status()
-    resp_json = resp.json()
-    # 假设返回格式类似 OpenAI：resp_json["choices"][0]["message"]["content"]
-    verdict = resp_json["choices"][0]["message"]["content"].strip().lower()
-    return verdict == "correct"
+from llm_judge import llm_judge_via_api
 
 
 # 定义超参数

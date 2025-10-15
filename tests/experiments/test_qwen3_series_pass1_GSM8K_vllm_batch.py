@@ -1,35 +1,61 @@
 print("========begin evaluate========")
 print()
 
-print("begin loading transformers")
-print()
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-import pandas as pd
-import re
-import datetime
 import os
-from llm_judge import llm_judge_via_api
+import re
+import torch
+import datetime
+import pandas as pd
+import requests
+from vllm import LLM, SamplingParams
+from transformers import AutoTokenizer
 
 
-# 定义超参数
-# 模型路径
+# ======================= 评测函数 =======================
+def llm_judge_via_api(answer, ground_truth, api_url, api_key, judge_model_name):
+    """调用 LLM 评委 API，判断答案是否正确"""
+    prompt = (
+        f"You are a math evaluator. Compare the two answers and respond with exactly "
+        f"'correct' or 'incorrect'.\n\n"
+        f"Ground truth: {ground_truth}\n"
+        f"Model answer: {answer}\n"
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data = {
+        "model": judge_model_name,
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    resp = requests.post(api_url, headers=headers, json=data)
+    resp.raise_for_status()
+    resp_json = resp.json()
+    verdict = resp_json["choices"][0]["message"]["content"].strip().lower()
+    return verdict == "correct"
+
+
+# ======================= 参数定义 =======================
 model_path = "/data/home/the/rxliu/projects/open-r1-main/output/Qwen3-0.6B-GRPO-Olympiads/checkpoint-500"
-# 数据集路径
 dataset_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
-# 问题字段名称
-question_field = "question"
-# 答案字段名称
-answer_field = "answer"
-# api_url
+save_dir = "/data/home/the/rxliu/projects/open-r1-main/tests/results"
+
 api_url = "https://ai-yyds.com/v1/chat/completions"
-# api key
 api_key = "sk-RyIv6tr8xb9AribIAfD9Ab640c2e4fCeBeAa98Cd892f894d"
-# 选择LLM Judge的模型
 judge_model_name = "gpt-4o-mini"
-# system_prompt
+
+batch_size = 8   # 每次并行生成 8 条（可改大）
+question_field = "question"
+answer_field = "answer"
+
+model_name = os.path.basename(model_path)
+dataset_name = os.path.basename(os.path.dirname(dataset_path))
+date_str = datetime.datetime.now().strftime("%Y%m%d")
+save_path = os.path.join(save_dir, f"{model_name}_{dataset_name}_{date_str}.csv")
+
+# system prompt（保持原样）
 self_prompt = """
-  You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>
+    You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>
 
   Besides, you must comply with below conditions:
   1.During the <think> phase you should organize the chain of thought using below tags:
@@ -203,129 +229,108 @@ self_prompt = """
     70
 
   </answer>
-"""
-# 保存结果路径
-save_dir = "/data/home/the/rxliu/projects/open-r1-main/tests/results"
-# 动态生成文件名：模型名 + 数据集名 + 日期
-model_name = os.path.basename(model_path)
-dataset_name = os.path.basename(os.path.dirname(dataset_path))
-date_str = datetime.datetime.now().strftime("%Y%m%d")
-save_path = os.path.join(save_dir, f"{model_name}_{dataset_name}_{date_str}.csv")
+  """
 
 
-
-# 加载 tokenizer 和模型
-print("begin loading model")
-print()
+# ======================= 初始化模型 =======================
+print("begin loading vLLM model")
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-model = AutoModelForCausalLM.from_pretrained(
-    model_path,
-    device_map="auto",   # 自动放到GPU上
-    torch_dtype=torch.bfloat16  # 如果显卡支持BF16
+
+llm = LLM(
+    model=model_path,
+    tensor_parallel_size=4,  # 使用 4 张 GPU
+    dtype="bfloat16",
 )
 
+sampling_params = SamplingParams(
+    temperature=0.6,
+    top_p=0.95,
+    top_k=20,
+    max_tokens=38912,
+)
+
+
+# ======================= 数据加载 =======================
+df = pd.read_parquet(dataset_path)
 results = []
 correct = 0
 total = 0
 
 
-# 读取数据集
-df = pd.read_parquet(dataset_path)
-# 遍历每一条样本
-for i, row in df.iterrows():
-    problem = row[question_field]
-    ground_truth = row[answer_field]
-    print(f"========question {i}========")
-    print(f"question: {problem}")
-    print()
+# ======================= 批量生成 =======================
+print("========begin batch generation========")
 
-    messages = [
-        {"role": "system", "content": self_prompt},
-        
-        {"role": "user", "content": problem}
-    ]
+for start in range(0, len(df), batch_size):
+    batch = df.iloc[start:start + batch_size]
+    print(f"\n--- Processing batch {start} ~ {start + len(batch) - 1} ---")
 
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=True # Switches between thinking and non-thinking modes. Default is True.
-    )
-    model_inputs = tokenizer(text, return_tensors="pt").to(model.device)
-    
-    with torch.no_grad():
-        generated_ids = model.generate(
-            **model_inputs,
-            max_new_tokens=38912, # 32768或38912
-            temperature=0.6,
-            top_p=0.95,
-            top_k=20,
-            do_sample=True
+    # 构造输入 prompts
+    prompts = []
+    for _, row in batch.iterrows():
+        problem = row[question_field]
+        messages = [
+            {"role": "system", "content": self_prompt},
+            {"role": "user", "content": problem}
+        ]
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=True
         )
-    output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist() 
-    # parsing thinking content
-    try:
-        # rindex finding 151668 (</think>)
-        index = len(output_ids) - output_ids[::-1].index(151668)
-    except ValueError:
-        index = 0
+        prompts.append(text)
 
-    thinking_content = tokenizer.decode(output_ids[:index], skip_special_tokens=True).strip("\n")
-    answer_content = tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-    print(f"thinking_content:")
-    print()
-    print(thinking_content)
-    print()
-    print(f"answer_content:")
-    print()
-    print(answer_content)
-    print()
+    # vLLM 并行推理
+    outputs = llm.generate(prompts, sampling_params)
 
-    # 用正则提取 <answer>...</answer> 中的内容（包括换行）
-    match = re.search(r"<answer>([\s\S]*?)</answer>", answer_content)
-    if match:
-        predict_answer = match.group(1).strip()
-    else:
-        print("Cannot answer found in the output.")
-    
-    # GSM8K给的answer包括解题过程和最终答案的数字，答案是在####之后，提取出来。如果提取失败的话，还是将原本的answer作为答案交给大模型评委
-    match = re.search(r"####\s*([-\d\.]+)", ground_truth)
-    if match:
-        ground_truth_answer = match.group(1).strip()
-    else:
-        ground_truth_answer = ground_truth
-        print("No final answer found in ground truth.")
+    # 遍历每个样本结果
+    for i, row in enumerate(batch.itertuples()):
+        idx = start + i
+        problem = getattr(row, question_field)
+        ground_truth = getattr(row, answer_field)
+        output_text = outputs[i].outputs[0].text.strip()
 
-    # 计算准确率
-    total += 1
-    try:
-        is_correct = llm_judge_via_api(predict_answer, ground_truth_answer, api_url, api_key, judge_model_name)
-        status = "✅" if is_correct else "❌"
-    except Exception as e:
-        print("Judge API error:", e)
-        is_correct = (predict_answer.strip() == ground_truth_answer.strip())
-        status = "⚠️ API_ERROR"
+        # 提取 <think> 和 <answer>
+        match_think = re.search(r"<think>([\s\S]*?)</think>", output_text)
+        match_ans = re.search(r"<answer>([\s\S]*?)</answer>", output_text)
+        thinking_content = match_think.group(1).strip() if match_think else ""
+        predict_answer = match_ans.group(1).strip() if match_ans else output_text
 
-    if is_correct:
-        correct += 1
+        # Ground truth 提取 #### 后数字
+        match_gt = re.search(r"####\s*([-\d\.]+)", ground_truth)
+        ground_truth_answer = match_gt.group(1).strip() if match_gt else ground_truth
 
-    print(f"extracted answer: {predict_answer} | ground_truth: {ground_truth_answer} | {status}")
-    print()
-    print()
+        # 调用评审 API
+        total += 1
+        try:
+            is_correct = llm_judge_via_api(predict_answer, ground_truth_answer, api_url, api_key, judge_model_name)
+            status = "✅" if is_correct else "❌"
+        except Exception as e:
+            print("Judge API error:", e)
+            is_correct = (predict_answer.strip() == ground_truth_answer.strip())
+            status = "⚠️ API_ERROR"
 
-    # 保存结果
-    results.append({
-        "id": i,
-        "question": problem,
-        "predicted_answer": predict_answer,
-        "ground_truth": ground_truth,
-        "thinking_content": thinking_content,
-        "is_correct": is_correct,
-        "status": status
-    })
+        if is_correct:
+            correct += 1
+
+        acc = correct / total
+        print(f"[{idx}] extracted: {predict_answer} | gt: {ground_truth_answer} | {status}")
+
+        results.append({
+            "id": idx,
+            "question": problem,
+            "predicted_answer": predict_answer,
+            "ground_truth": ground_truth,
+            "thinking_content": thinking_content,
+            "is_correct": is_correct,
+            "status": status
+        })
+
+    # ✅ 每个 batch 打印一次实时准确率
+    print(f"Batch {start // batch_size + 1} done. Current accuracy: {correct}/{total} = {correct/total:.4f}")
 
 
-# 保存结果为 CSV 文件
+# ======================= 保存结果 =======================
 df_results = pd.DataFrame(results)
 df_results["accuracy"] = correct / total if total > 0 else 0.0
 df_results.to_csv(save_path, index=False, encoding="utf-8")
