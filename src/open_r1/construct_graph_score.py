@@ -38,6 +38,7 @@ def construct_graph_and_score(think_content):
 
   # 检查图的连通性（弱连通性适用于有向图）
   is_connected = nx.is_weakly_connected(G) if len(G.nodes) > 0 else False
+  
 
   return 1 if is_connected else 0
 
