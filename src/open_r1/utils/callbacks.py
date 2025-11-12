@@ -122,10 +122,16 @@ def get_callbacks(train_config, model_config):
     for callback_name in train_config.callbacks:
         if callback_name not in CALLBACKS:
             raise ValueError(f"Callback {callback_name} not found in CALLBACKS.")
-        # 注意 wandb 不需要 model_config 参数
-        if callback_name == "wandb":
-            callbacks.append(WandbTrainingCallback())
         else:
             callbacks.append(CALLBACKS[callback_name](model_config))
+    
+    # 判断是否已经包含 WandbTrainingCallback
+    has_wandb_callback = any(
+        isinstance(cb, WandbTrainingCallback) for cb in callbacks
+    ) or "WandbTrainingCallback" in train_config.callbacks
+
+    if not has_wandb_callback:
+        # 注意 wandb 不需要 model_config 参数
+        callbacks.append(WandbTrainingCallback())
 
     return callbacks

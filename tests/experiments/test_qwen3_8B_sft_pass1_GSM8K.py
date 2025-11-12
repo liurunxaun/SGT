@@ -189,7 +189,7 @@ api_key = "sk-RyIv6tr8xb9AribIAfD9Ab640c2e4fCeBeAa98Cd892f894d"
 # 选择LLM Judge的模型
 judge_model_name = "gpt-4o-mini"
 # system_prompt
-self_prompt = ""
+self_prompt = "Your answer only needs to include one number"
 # 保存结果路径
 save_dir = "/data/home/the/rxliu/projects/open-r1-main/tests/results"
 # 动态生成文件名：模型名 + 数据集名 + 日期

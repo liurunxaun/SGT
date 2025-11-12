@@ -37,6 +37,7 @@ from .utils.competitive_programming import score_submission as cf_score_submissi
 from .utils.competitive_programming import score_subtask
 
 from construct_graph_score import construct_graph_and_score
+from tests.utils.llm_judge import llm_judge_via_api
 
 def structure_reward(completions, **kwargs):
     rewards = []
@@ -53,41 +54,77 @@ def structure_reward(completions, **kwargs):
     return rewards
 
 
+# def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str], **kwargs) -> list[Optional[float]]:
+#     """Reward function that checks if the completion is the same as the ground truth."""
+#     contents = [completion[0]["content"] for completion in completions]
+#     rewards = []
+#     for content, sol in zip(contents, solution):
+#         gold_parsed = parse(
+#             sol,
+#             extraction_mode="first_match",
+#         )
+#         if len(gold_parsed) != 0:
+#             # We require the answer to be provided in correct latex (no malformed operators)
+#             answer_parsed = parse(
+#                 content,
+#                 extraction_config=[
+#                     LatexExtractionConfig(
+#                         normalization_config=NormalizationConfig(
+#                             nits=False,
+#                             malformed_operators=False,
+#                             basic_latex=True,
+#                             equations=True,
+#                             boxed="all",
+#                             units=True,
+#                         ),
+#                         # Ensures that boxed is tried first
+#                         boxed_match_priority=0,
+#                         try_extract_without_anchor=False,
+#                     )
+#                 ],
+#                 extraction_mode="first_match",
+#             )
+#             # Compute binary rewards if verifiable, `None` otherwise to skip this example
+#             try:
+#                 reward = float(verify(gold_parsed, answer_parsed))
+#             except Exception as e:
+#                 print(f"verify failed: {e}, answer: {answer_parsed}, gold: {gold_parsed}")
+#                 reward = None
+#         else:
+#             # If the gold solution is not parseable, we assign `None` to skip this example
+#             reward = None
+#             print("Failed to parse gold solution: ", sol)
+#         rewards.append(reward)
+
+#     return rewards
+
+
 def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str], **kwargs) -> list[Optional[float]]:
+    # api_url
+    api_url = "https://ai-yyds.com/v1/chat/completions"
+    # api key
+    api_key = "sk-RyIv6tr8xb9AribIAfD9Ab640c2e4fCeBeAa98Cd892f894d"
+    # 选择LLM Judge的模型
+    judge_model_name = "gpt-5"
+
     """Reward function that checks if the completion is the same as the ground truth."""
     contents = [completion[0]["content"] for completion in completions]
-    # print(f"contents:{contents}")
-    # print(f"solution{solution}")
     rewards = []
     for content, sol in zip(contents, solution):
-        gold_parsed = parse(
-            sol,
-            extraction_mode="first_match",
-        )
+        # 这要求在强化学习之前处理数据集，solution字段就是标准答案
+        gold_parsed = sol
+
         if len(gold_parsed) != 0:
             # We require the answer to be provided in correct latex (no malformed operators)
-            answer_parsed = parse(
-                content,
-                extraction_config=[
-                    LatexExtractionConfig(
-                        normalization_config=NormalizationConfig(
-                            nits=False,
-                            malformed_operators=False,
-                            basic_latex=True,
-                            equations=True,
-                            boxed="all",
-                            units=True,
-                        ),
-                        # Ensures that boxed is tried first
-                        boxed_match_priority=0,
-                        try_extract_without_anchor=False,
-                    )
-                ],
-                extraction_mode="first_match",
-            )
+            # 用正则提取 <answer>...</answer> 中的内容（包括换行）
+            match = re.search(r"<answer>([\s\S]*?)</answer>", content)
+            if match:
+                answer_parsed = match.group(1).strip()
+            else:
+                print("Cannot answer found in the output.")
             # Compute binary rewards if verifiable, `None` otherwise to skip this example
             try:
-                reward = float(verify(gold_parsed, answer_parsed))
+                reward = float(llm_judge_via_api(answer_parsed, gold_parsed, api_url, api_key, judge_model_name))
             except Exception as e:
                 print(f"verify failed: {e}, answer: {answer_parsed}, gold: {gold_parsed}")
                 reward = None
@@ -107,7 +144,6 @@ def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str]
 #     matches = [re.match(pattern, content, re.DOTALL | re.MULTILINE) for content in completion_contents]
 #     return [1.0 if match else 0.0 for match in matches]
 
-import re
 
 def format_reward(completions, **kwargs):
     """Reward function that checks if the reasoning process is enclosed within <think> and </think> tags,

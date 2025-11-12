@@ -48,6 +48,7 @@ from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
+os.environ["WANDB_API_KEY"] = '7b5e421309a7f263058faebac5cb0bc4e74608f2'
 
 logger = logging.getLogger(__name__)
 

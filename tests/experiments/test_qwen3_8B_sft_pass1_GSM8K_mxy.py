@@ -164,13 +164,24 @@ print()
 
 print("begin loading transformers")
 print()
+import sys
+import os
+
+# 获取当前文件（1.py）的绝对路径
+current_file_path = os.path.abspath(__file__)
+# 获取folder1的路径（current_file_path的父目录）
+folder1_path = os.path.dirname(current_file_path)
+# 获取project的路径（folder1_path的父目录，即两个文件夹的共同父目录）
+project_path = os.path.dirname(folder1_path)
+# 将project_path添加到Python的搜索路径中
+sys.path.append(project_path)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import pandas as pd
 import re
 import datetime
 import os
-from llm_judge import llm_judge_via_api
+from utils.llm_judge import llm_judge_via_api
 
 
 # 定义超参数
@@ -189,14 +200,14 @@ api_key = "sk-RyIv6tr8xb9AribIAfD9Ab640c2e4fCeBeAa98Cd892f894d"
 # 选择LLM Judge的模型
 judge_model_name = "gpt-4o-mini"
 # system_prompt
-self_prompt = ""
+self_prompt = "Your answer only needs to include one number"
 # 保存结果路径
 save_dir = "/data/home/the/rxliu/projects/open-r1-main/tests/results"
 # 动态生成文件名：模型名 + 数据集名 + 日期
 model_name = os.path.basename(model_path)
 dataset_name = os.path.basename(os.path.dirname(dataset_path))
 date_str = datetime.datetime.now().strftime("%Y%m%d")
-save_path = os.path.join(save_dir, f"{model_name}_{dataset_name}_{date_str}.csv")
+save_path = os.path.join(save_dir, f"{model_name}_{dataset_name}_{date_str}_2.csv")
 
 
 
@@ -217,7 +228,6 @@ total = 0
 
 # 读取数据集
 df = pd.read_parquet(dataset_path)
-df = df.head(100)
 
 # 遍历每一条样本
 for i, row in df.iterrows():
