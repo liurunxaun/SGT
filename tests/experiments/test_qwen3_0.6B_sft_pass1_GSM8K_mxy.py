@@ -20,7 +20,7 @@ import pandas as pd
 import re
 import datetime
 import os
-from utils.llm_judge_mxy import llm_judge_via_api
+from utils.llm_judge import llm_judge_via_api
 
 
 # 定义超参数
