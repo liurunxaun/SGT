@@ -101,11 +101,11 @@ def structure_reward(completions, **kwargs):
 
 def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str], **kwargs) -> list[Optional[float]]:
     # api_url
-    api_url = "https://ai-yyds.com/v1/chat/completions"
+    api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     # api key
-    api_key = "sk-RyIv6tr8xb9AribIAfD9Ab640c2e4fCeBeAa98Cd892f894d"
+    api_key = "sk-8d445207b1ab47efb83069ccc1b845b6"
     # 选择LLM Judge的模型
-    judge_model_name = "gpt-5"
+    judge_model_name = "qwen3-next-80b-a3b-instruct"
 
     """Reward function that checks if the completion is the same as the ground truth."""
     contents = [completion[0]["content"] for completion in completions]
