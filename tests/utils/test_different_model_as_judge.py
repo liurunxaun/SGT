@@ -4,16 +4,24 @@ from tqdm import tqdm
 from llm_judge import llm_judge_via_api
 
 # ===== 用户配置 =====
-input_path = "/data/home/the/rxliu/projects/open-r1-main/tests/utils/_main_20251110_temp.csv"
-output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/utils/_main_20251110_judged.csv"
+input_path = "/data/home/the/rxliu/projects/open-r1-main/tests/utils/olympiads+gsm8k_5000_qwen0.6B_sft_main_20251110_temp.csv"
+output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/utils/olympiads+gsm8k_5000_qwen0.6B_sft_main_20251114_qwen3-next-80b-a3b-instruc_judged.csv"
 
 # LLM 评审接口配置（根据你的实际情况填写）
+
+# # api_url
+# api_url = "https://ai-yyds.com/v1/chat/completions"
+# # api key
+# api_key = "sk-noxrhBbTTb9qvHlGBb6d16D09a62480281C2E330E014Cf34"
+# # 选择LLM Judge的模型
+# judge_model_name = "gpt-5"
+
 # api_url
-api_url = "https://ai-yyds.com/v1/chat/completions"
+api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 # api key
-api_key = "sk-noxrhBbTTb9qvHlGBb6d16D09a62480281C2E330E014Cf34"
+api_key = "sk-8d445207b1ab47efb83069ccc1b845b6"
 # 选择LLM Judge的模型
-judge_model_name = "gpt-5"
+judge_model_name = "qwen3-next-80b-a3b-instruct"
 
 
 # ===== 读取 CSV =====

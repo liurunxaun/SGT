@@ -1,4 +1,7 @@
 import requests
+import os
+from openai import OpenAI
+import json
 
 
 def llm_judge_via_api(answer, ground_truth, api_url, api_key, judge_model_name):
@@ -63,22 +66,44 @@ def llm_judge_via_api(answer, ground_truth, api_url, api_key, judge_model_name):
             right
       '''
     )
+
+    if judge_model_name == "qwen3-next-80b-a3b-instruct":
+
+        client = OpenAI(
+            # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx"
+            api_key = api_key,
+            base_url = api_url
+        )
+
+        completion = client.chat.completions.create(
+            # 模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
+            model=judge_model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ]
+        )
+        response = completion.model_dump_json()
+        verdict = json.loads(response)["choices"][0]["message"]["content"]
     
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    data = {
-        "model": judge_model_name,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-    resp = requests.post(api_url, headers=headers, json=data)
-    resp.raise_for_status()
-    resp_json = resp.json()
-    verdict = resp_json["choices"][0]["message"]["content"].strip().lower()
+    else:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        data = {
+            "model": judge_model_name,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        }
+        resp = requests.post(api_url, headers=headers, json=data)
+        resp.raise_for_status()
+        resp_json = resp.json()
+        verdict = resp_json["choices"][0]["message"]["content"].strip().lower()
+    
     print()
     print(f"verdict: {verdict}")
     print()
+
     return verdict == "right"
