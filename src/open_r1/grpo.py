@@ -28,6 +28,7 @@ from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
 from trl import GRPOTrainer, ModelConfig, TrlParser, get_peft_config
 
+sys.path.append("/data/home/the/rxliu/projects/open-r1-main")
 
 logger = logging.getLogger(__name__)
 
