@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import sys
+import logging
+
+sys.path.append("/data/home/the/rxliu/projects/open-r1-main/src")
 
 import datasets
 import transformers
@@ -28,7 +30,6 @@ from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
 from trl import GRPOTrainer, ModelConfig, TrlParser, get_peft_config
 
-sys.path.append("/data/home/the/rxliu/projects/open-r1-main")
 
 logger = logging.getLogger(__name__)
 
