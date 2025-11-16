@@ -90,7 +90,7 @@ def reward_connectivity(G):
 
 
 def reward_reachability(G, node_dict):
-    """从第一个标签 → 最后一个标签 任意节点可达 = 1，否则 0"""
+    """从第一个标签 → 最后一个标签 存在节点可达 = 1，否则 0"""
 
     # 根据 node_id 顺序读取标签序列
     labels_order = []
@@ -193,15 +193,15 @@ if __name__ == "__main__":
         <known>
 
             {
-            node_id:1
-            parents:none
-            content:Natalia sold clips to 48 of her friends in April.
+                node_id:1
+                parents:none
+                content:Natalia sold clips to 48 of her friends in April.
             },
 
             {
-            node_id:2
-            parents:none
-            content:In May, Natalia sold half as many clips as she did in April.
+                node_id:2
+                parents:none
+                content:In May, Natalia sold half as many clips as she did in April.
             }
 
         </known>
@@ -209,15 +209,15 @@ if __name__ == "__main__":
         <generate>
 
             {
-            node_id:3
-            parents:1
-            content:Clips sold in April = 48
+                node_id:3
+                parents:1
+                content:Clips sold in April = 48
             },
 
             {
-            node_id:4
-            parents:2
-            content:Clips sold in May = 48 / 2 = 24
+                node_id:4
+                parents:2
+                content:Clips sold in May = 48 / 2 = 24
             }
 
         </generate>
@@ -225,9 +225,9 @@ if __name__ == "__main__":
         <aggregate>
 
             {
-            node_id:5
-            parents:3,4
-            content:Total clips sold in April and May = 48 + 24
+                node_id:5
+                parents:3,4
+                content:Total clips sold in April and May = 48 + 24
             }
 
         </aggregate>
@@ -235,9 +235,9 @@ if __name__ == "__main__":
         <refine>
 
             {
-            node_id:6
-            parents:5
-            content:Total clips sold in April and May = 72
+                node_id:6
+                parents:5
+                content:Total clips sold in April and May = 72
             }
 
         </refine>
