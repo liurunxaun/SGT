@@ -36,10 +36,10 @@ from .utils.competitive_programming import patch_code as cf_patch_code
 from .utils.competitive_programming import score_submission as cf_score_submission
 from .utils.competitive_programming import score_subtask
 
-from construct_graph_score import construct_graph_and_score
+from construct_graph_and_score import construct_graph_and_score
 from tests.utils.llm_judge import llm_judge_via_api
 
-def structure_reward(completions, **kwargs):
+def graph_reward(completions, **kwargs):
     rewards = []
 
     contents = [completion[0]["content"] for completion in completions]
@@ -740,7 +740,7 @@ def get_soft_overlong_punishment(max_completion_len, soft_punish_cache):
 
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
-        "structure": structure_reward,
+        "graph": graph_reward,
         "accuracy": accuracy_reward,
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,
