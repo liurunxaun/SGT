@@ -44,7 +44,7 @@ push_to_hub: false
 report_to:
 - wandb
 reward_funcs:
-- structure
+- graph
 - accuracy
 - format
 - tag_count

@@ -314,7 +314,7 @@ def main():
         print("数据加载完成")
 
         client = OpenAI(base_url=BASE_URL, api_key=API_KEY)
-        start = 1700
+        start = 5850
         end = len(df)-1
         chunk_size = 50  # 设置块大小，每50条保存一次
         output_file = "result_data_GSM8K_last6000.xlsx"

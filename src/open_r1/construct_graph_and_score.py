@@ -90,71 +90,96 @@ def reward_connectivity(G):
 
 
 def reward_reachability(G, node_dict):
-    """从第一个标签 → 最后一个标签 存在节点可达 = 1，否则 0"""
+    """从第一个标签 → 最后一个标签 若存在可达路径则 reward = 1，否则 = 0"""
 
-    # 根据 node_id 顺序读取标签序列
-    labels_order = []
-    for nid in sorted(node_dict.keys()):
-        lab = node_dict[nid]["label"]
-        if lab not in labels_order:
-            labels_order.append(lab)
+    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
 
-    if len(labels_order) < 2:
+    if not start_nodes or not end_nodes:
         return 0.0
-
-    start_label = labels_order[0]
-    end_label = labels_order[-1]
-
-    start_nodes = [nid for nid, info in node_dict.items() if info["label"] == start_label]
-    end_nodes   = [nid for nid, info in node_dict.items() if info["label"] == end_label]
 
     for s in start_nodes:
         for e in end_nodes:
             if nx.has_path(G, s, e):
                 return 1.0
+
     return 0.0
 
 
-def reward_short_path(G, node_dict):
-    """路径越短越好： 1 / (1 + min_distance)"""
-    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
-    if not start_nodes or not end_nodes:
-        return 0.0
+def reward_label_node(
+    node_dict,
+    w_node=0.25,
+    w_parent=0.25,
+    w_cross_ref=0.25
+):
+    """
+    结构性奖励（逐项累加）：
+    - 三项规则分别通过可得 w_count / w_parent / w_cross_ref 分（默认均为 0.25）。
+    - 返回值为三项之和，最大值 = w_count + w_parent + w_cross_ref（默认 0.75）。
 
-    min_len = float("inf")
-    for s in start_nodes:
-        for e in end_nodes:
-            try:
-                dist = nx.shortest_path_length(G, s, e)
-                min_len = min(min_len, dist)
-            except nx.NetworkXNoPath:
+    规则：
+    1. 标签节点数量要求
+       - aggregate: 必须 1 个
+       - refine:    必须 1 个
+
+    2. 各标签节点的父节点数量要求
+       - known: parents = 0
+       - aggregate: parents > 1
+       - refine: parents = 1
+
+    3. 同一标签内的节点不能互相作为父节点（不能互相引用）
+       - 若一个 label 下多个节点，任一节点的 parent 中不能包含该 label 的其他节点
+    """
+
+    score = 0.0
+
+    # 规则1：标签数量要求
+    def rule_node_number():
+        label_require = {"aggregate": 1, "refine": 1}
+        for lb, required in label_require.items():
+            actual = sum(1 for x in node_dict.values() if x["label"] == lb)
+            if actual != required:
+                return 0.0
+        return 1.0
+
+    # 规则2：父节点数量要求（全通过为 1，否则 0）
+    def rule_parent_num():
+        for nid, info in node_dict.items():
+            label = info["label"]
+            pnum = len(info["parents"])
+
+            if label == "known":
+                if pnum != 0:
+                    return 0.0
+            elif label == "aggregate":
+                if pnum <= 1:
+                    return 0.0
+            elif label == "refine":
+                if pnum != 1:
+                    return 0.0
+        return 1.0
+
+    # 规则3：同标签内节点不能互相引用（全通过为 1，否则 0）
+    def rule_cross_reference():
+        groups = {}
+        for nid, info in node_dict.items():
+            groups.setdefault(info["label"], []).append(nid)
+
+        for lb, nodes in groups.items():
+            if len(nodes) <= 1:
                 continue
+            node_set = set(nodes)
+            for nid in nodes:
+                if set(node_dict[nid]["parents"]) & node_set:
+                    return 0.0
+        return 1.0
 
-    if min_len == float("inf"):
-        return 0.0
+    # 叠加得分
+    score += w_node * rule_node_number()
+    score += w_parent * rule_parent_num()
+    score += w_cross_ref * rule_cross_reference()
 
-    return 1.0 / (1 + min_len)
+    return score
 
-
-def reward_long_path(G, node_dict):
-    """路径越长越好： 1 - 1/(1 + max_distance)"""
-    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
-    if not start_nodes or not end_nodes:
-        return 0.0
-
-    max_len = -1
-    for s in start_nodes:
-        for e in end_nodes:
-            try:
-                dist = nx.shortest_path_length(G, s, e)
-                max_len = max(max_len, dist)
-            except nx.NetworkXNoPath:
-                continue
-
-    if max_len < 0:
-        return 0.0
-
-    return 1.0 - 1.0 / (1 + max_len)
 
 
 # ============================================================
@@ -163,28 +188,29 @@ def reward_long_path(G, node_dict):
 
 def construct_graph_and_score(
     think_content,
-    w_reach=0.6, 
-    w_short=0.1,
-    w_long=0.1,
-    w_conn=0.2
+    wight_reachability = 0.6, 
+    wight_connectivity = 0.2,
+    wight_label_node = 0.2
 ):
     
     G, node_dict = construct_graph(think_content)
 
-    reach_r = reward_reachability(G, node_dict)
-    short_r = reward_short_path(G, node_dict)
-    long_r  = reward_long_path(G, node_dict)
-    conn_r  = reward_connectivity(G)
+    reachability_reward = reward_reachability(G, node_dict)
+    connectivity_reward = reward_connectivity(G)
+    label_node_reward = reward_label_node(node_dict)
 
     graph_award = (
-        w_reach * reach_r +
-        w_short * short_r +
-        w_long * long_r +
-        w_conn * conn_r
+        wight_reachability * reachability_reward +
+        wight_connectivity * connectivity_reward +
+        wight_label_node * label_node_reward
     )
 
     return graph_award
 
+
+# ============================================================
+#                     示例
+# ============================================================
 
 if __name__ == "__main__":
     think_content = """
