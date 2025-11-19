@@ -1,5 +1,7 @@
 import re
 import networkx as nx
+import requests
+import json
 
 # ============================================================
 #                  构建图
@@ -77,6 +79,64 @@ def _get_start_end_nodes(node_dict):
     return start_nodes, end_nodes
 
 
+def llm_judge_semantic_coherence(parent_text, child_text):
+        """
+        输入父节点和子节点文本，让大模型给出 0~1 的连贯性分数。
+        """
+
+        api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+        api_key = "sk-8d445207b1ab47efb83069ccc1b845b6"
+        model = "qwen3-next-80b-a3b-instruct"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        prompt = f"""
+            You are an analytical evaluator. Your task is to judge whether a child's reasoning step logically follows and builds upon its parent step without introducing contradictions.
+
+            ### Parent Node Content:
+            {parent_text}
+
+            ### Child Node Content:
+            {child_text}
+
+            ### Evaluation Criteria:
+            1. The child should logically build upon the parent without introducing contradictions.
+            2. If the child repeats the parent’s idea with more detail, score should be high.
+            3. If the child introduces a valid, additional reasoning step that logically follows, score should be high.
+            4. If the child contradicts the parent (e.g., parent: 150%, child: 0.15), the score should be low.
+            5. If the child introduces information that violates the parent’s logic, the score should be low.
+
+            ### Output Format:
+            Respond ONLY with a number between 0 and 1 representing the semantic coherence score.
+            No explanation. No text around it.
+        """
+
+        data = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0,
+        }
+
+        try:
+            response = requests.post(api_url, headers=headers, data=json.dumps(data))
+            result = response.json()
+
+            score_str = result["choices"][0]["message"]["content"].strip()
+            score = float(score_str)
+
+            score = max(0.0, min(1.0, score))
+            return score
+
+        except Exception as e:
+            print("LLM semantic check error:", e)
+            return 0.0
+
+
 # ============================================================
 #                    奖励函数
 # ============================================================
@@ -105,16 +165,15 @@ def reward_reachability(G, node_dict):
     return 0.0
 
 
-def reward_label_node(
+def reward_label_structure(
     node_dict,
-    w_node=0.25,
-    w_parent=0.25,
-    w_cross_ref=0.25
+    w_node=0.33,
+    w_parent=0.33,
+    w_cross_ref=0.33
 ):
     """
-    结构性奖励（逐项累加）：
-    - 三项规则分别通过可得 w_count / w_parent / w_cross_ref 分（默认均为 0.25）。
-    - 返回值为三项之和，最大值 = w_count + w_parent + w_cross_ref（默认 0.75）。
+    各种标签内节点的结构的奖励：
+    - 返回值为三项之和，w_count + w_parent + w_cross_ref。
 
     规则：
     1. 标签节点数量要求
@@ -181,6 +240,28 @@ def reward_label_node(
     return score
 
 
+def reward_semantic_coherent(node_dict):
+    """
+    对每个节点的内容和其父节点的内容进行语义连贯性评价。
+    返回 0~1 分。
+    """
+    all_scores = []
+
+    for child_id, info in node_dict.items():
+        child_text = info["content"]
+        parents = info["parents"]
+
+        for p in parents:
+            parent_text = node_dict[p]["content"]
+
+            score = llm_judge_semantic_coherence(parent_text, child_text)
+            all_scores.append(score)
+
+    if not all_scores:
+        return 0.0
+
+    return sum(all_scores) / len(all_scores)
+
 
 # ============================================================
 #                     统一入口
@@ -190,19 +271,22 @@ def construct_graph_and_score(
     think_content,
     wight_reachability = 0.6, 
     wight_connectivity = 0.2,
-    wight_label_node = 0.2
+    wight_label_structure = 0.1,
+    wight_semantic_coherent = 0.1
 ):
     
     G, node_dict = construct_graph(think_content)
 
     reachability_reward = reward_reachability(G, node_dict)
     connectivity_reward = reward_connectivity(G)
-    label_node_reward = reward_label_node(node_dict)
+    label_structure_reward = reward_label_structure(node_dict)
+    semantic_coherent_reward = reward_semantic_coherent(node_dict)
 
     graph_award = (
         wight_reachability * reachability_reward +
         wight_connectivity * connectivity_reward +
-        wight_label_node * label_node_reward
+        wight_label_structure * label_structure_reward +
+        wight_semantic_coherent * semantic_coherent_reward
     )
 
     return graph_award
@@ -269,9 +353,5 @@ if __name__ == "__main__":
         </refine>
 
     </think>
-
-    <answer>
-        Natalia sold a total of 72 clips in April and May.
-    </answer>
     """
     print(construct_graph_and_score(think_content))
