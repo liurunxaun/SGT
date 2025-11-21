@@ -61,3 +61,16 @@ top_p: 0.95
 top_k: 20
 use_liger_kernel: true
 warmup_ratio: 0.1
+
+graph_reward_funcs:
+- reachability
+- connectivity
+- label_structure
+- semantic_coherent
+- effective_subgraph_information_proportion
+graph_reward_weights:
+- 5.0
+- 2.0
+- 1.0
+- 1.0
+- 1.0

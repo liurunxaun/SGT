@@ -135,35 +135,25 @@ def llm_judge_semantic_coherence(parent_text, child_text):
         except Exception as e:
             print("LLM semantic check error:", e)
             return 0.0
+        
+
+def count_tokens(text, script_args):
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        script_args.model_name_or_path,
+        trust_remote_code=True
+    )
+    
+    try:
+        return len(tokenizer.encode(text))
+    except:
+        return len(text)  # fallback
 
 
 # ============================================================
 #                    奖励函数
 # ============================================================
-
-def reward_connectivity(G):
-    """连通子图数量越少越好： reward = 1 / num_components"""
-    if not G.nodes:
-        return 0.0
-    num_cc = nx.number_weakly_connected_components(G)
-    return 1.0 / num_cc
-
-
-def reward_reachability(G, node_dict):
-    """从第一个标签 → 最后一个标签 若存在可达路径则 reward = 1，否则 = 0"""
-
-    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
-
-    if not start_nodes or not end_nodes:
-        return 0.0
-
-    for s in start_nodes:
-        for e in end_nodes:
-            if nx.has_path(G, s, e):
-                return 1.0
-
-    return 0.0
-
 
 def reward_label_structure(
     node_dict,
@@ -240,6 +230,117 @@ def reward_label_structure(
     return score
 
 
+def reward_connectivity(G):
+    """连通子图数量越少越好： reward = 1 / num_components"""
+    if not G.nodes:
+        return 0.0
+    num_cc = nx.number_weakly_connected_components(G)
+    return 1.0 / num_cc
+
+
+def reward_reachability(G, node_dict):
+    """从第一个标签 → 最后一个标签 若存在可达路径则 reward = 1，否则 = 0"""
+
+    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
+
+    if not start_nodes or not end_nodes:
+        return 0.0
+
+    for s in start_nodes:
+        for e in end_nodes:
+            if nx.has_path(G, s, e):
+                return 1.0
+
+    return 0.0
+
+
+def reward_effective_subgraph_information_proportion(think_content, G, node_dict, script_args):
+    """
+    计算有效推理子图的信息量占比。
+    1. 找 start → end 的最短路径 P
+    2. 找所有从 P 分出去、最终又回到 P 的分支节点 B
+    3. E = P ∪ B
+    4. 计算 token 信息量： sum(E) / sum(all)
+    """
+
+    # Step 1: start/end 节点
+    start_nodes, end_nodes = _get_start_end_nodes(node_dict)
+    if not start_nodes or not end_nodes:
+        return 0.0
+
+    # Step 2: 找 start → end 的最短路径 P
+    best_path = None
+    best_length = float('inf')
+
+    for s in start_nodes:
+        for e in end_nodes:
+            try:
+                path = nx.shortest_path(G, s, e)
+                if len(path) < best_length:
+                    best_path = path
+                    best_length = len(path)
+            except nx.NetworkXNoPath:
+                continue
+
+    # 如果完全找不到路径
+    if best_path is None:
+        return 0.0
+
+    P = best_path
+    P_set = set(P)
+
+    # Step 3: 找合法分支：从 P 分出去，又回到 P
+    branch_nodes = set()
+
+    for u in P:
+        # 所有孩子
+        for v in G.successors(u):
+            if v in P_set:
+                continue  # 仍在主路径
+
+            # BFS 看是否能从 v 回到 P
+            visited = set()
+            queue = [v]
+
+            can_return = False
+
+            while queue:
+                x = queue.pop(0)
+                if x in visited:
+                    continue
+                visited.add(x)
+
+                if x in P_set:
+                    can_return = True
+                    break
+
+                for y in G.successors(x):
+                    if y not in visited:
+                        queue.append(y)
+
+            if can_return:
+                branch_nodes.update(visited)
+
+    # Step 4: 有效子图节点集合 E
+    effective_nodes = P_set | branch_nodes
+
+    # Step 5: 基于 think_content 计算 token 比例
+    
+    # 全部 token
+    total_tokens = count_tokens(think_content, script_args)
+    # 有效 token：将 effective_nodes 的内容拼接
+    effective_texts = []
+    for nid in effective_nodes:
+        effective_texts.append(node_dict[nid]["content"])
+
+    effective_tokens = count_tokens("\n".join(effective_texts), script_args)
+
+    if total_tokens == 0:
+        return 0.0
+
+    return effective_tokens / total_tokens
+
+
 def reward_semantic_coherent(node_dict):
     """
     对每个节点的内容和其父节点的内容进行语义连贯性评价。
@@ -263,33 +364,58 @@ def reward_semantic_coherent(node_dict):
     return sum(all_scores) / len(all_scores)
 
 
+
+
+
 # ============================================================
 #                     统一入口
 # ============================================================
 
-def construct_graph_and_score(
-    think_content,
-    wight_reachability = 0.6, 
-    wight_connectivity = 0.2,
-    wight_label_structure = 0.1,
-    wight_semantic_coherent = 0.1
-):
-    
+def construct_graph_and_score(think_content, script_args):
+    """
+    根据 script_args.graph_reward_funcs 和 script_args.graph_reward_weights
+    动态计算图奖励，并对权重做归一化处理。
+    """
+
+    # step 1: 构图
     G, node_dict = construct_graph(think_content)
 
-    reachability_reward = reward_reachability(G, node_dict)
-    connectivity_reward = reward_connectivity(G)
-    label_structure_reward = reward_label_structure(node_dict)
-    semantic_coherent_reward = reward_semantic_coherent(node_dict)
+    # step 2: reward 函数注册表，新增函数需要在这里注册
+    reward_func_registry = {
+        "reachability": lambda: reward_reachability(G, node_dict),
+        "connectivity": lambda: reward_connectivity(G),
+        "label_structure": lambda: reward_label_structure(node_dict),
+        "semantic_coherent": lambda: reward_semantic_coherent(node_dict),
+        "effective_subgraph_information_proportion": lambda: reward_effective_subgraph_information_proportion(think_content, G, node_dict, script_args),
+    }
 
-    graph_award = (
-        wight_reachability * reachability_reward +
-        wight_connectivity * connectivity_reward +
-        wight_label_structure * label_structure_reward +
-        wight_semantic_coherent * semantic_coherent_reward
-    )
+    funcs = script_args.graph_reward_funcs
+    weights = script_args.graph_reward_weights
+
+    assert len(funcs) == len(weights), \
+        f"Length mismatch: funcs={len(funcs)}, weights={len(weights)}"
+
+    # step 3: 权重归一化
+    weight_sum = sum(weights)
+
+    if weight_sum == 0:
+        # 如果用户配置全 0，则变成均匀分配
+        norm_weights = [1/len(weights)] * len(weights)
+    else:
+        norm_weights = [w / weight_sum for w in weights]
+
+    graph_award = 0.0
+
+    # step 4: 动态调用 reward 函数
+    for func_name, weight in zip(funcs, norm_weights):
+        if func_name not in reward_func_registry:
+            raise ValueError(f"Unknown reward function: {func_name}")
+
+        reward_value = reward_func_registry[func_name]()
+        graph_award += weight * reward_value
 
     return graph_award
+
 
 
 # ============================================================
