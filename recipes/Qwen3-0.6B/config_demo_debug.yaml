@@ -11,7 +11,7 @@ chat_template: "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if 
 dataset_name: /ssd5/rxliu/datasets/RL-Data
 dataset_prompt_column: problem
 # system_prompt: "You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>"
-system_prompt: "Let's think step by step and output the final answer within \\boxed{}."
+system_prompt: "If you want to use <feedback>, please pay attention that its parent_ids must include the last node in the current reasoning chain. Let's think step by step and output the final answer within \\boxed{}."
 # GRPO trainer config
 bf16: true
 use_vllm: false
@@ -66,8 +66,8 @@ graph_reward_funcs:
 - reachability
 - connectivity
 - label_structure
-- semantic_coherent
 - effective_subgraph_information_proportion
+- semantic_coherent
 graph_reward_weights:
 - 5.0
 - 2.0

@@ -15,7 +15,7 @@ BASE_URL = "https://api.openai-proxy.org/v1"
 model = "qwen3-max"
 judge_model_name = "qwen3-next-80b-a3b-instruct"
 def construct_prompt(sample):
-    q, a = sample
+    q, s,a = sample
     prompt = """
 You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>\n...\n</think>\n<answer>\n...\n</answer>
 
@@ -40,8 +40,8 @@ For the content wrapped in different tags, there are the following formal requir
 - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
 - generate:(1) It wraps one node, and the parents of this nodes should be a single node. (2) It wraps two or more nodes, and the parents of these nodes should be a same single node.
 - aggregate：It wraps one node, and the parent of this node should be multiple nodes.
-- feedback：It wraps one node, and the parent of this node should be one or more nodes.
-- refine:It wraps one node, and the parent of this node should be a single node. more nodes. In addition, its parent_ids must include the last node in the current reasoning chain.
+- feedback：It wraps one node, and the parent of this node should be one or more nodes. more nodes. In addition, its parent_ids must include the last node in the current reasoning chain.
+- refine:It wraps one node, and the parent of this node should be a single node.
 - associative thinking：It wraps one node, and the parent of this node should be one or more nodes.
 - reverse thinking：It wraps one node, and the parent of this node should be one or more nodes.
 If a tag contains multiple nodes, the parents of these nodes cannot contain other nodes in the tag.
@@ -205,8 +205,12 @@ question：Find the sum of all integer bases b>9 for which 17_{b} is a divisor o
 </answer>
 
     """
-    prompt += "\n Now I have a math question.Please generate the thinking process and final answer for solving this math problem according to the above requirements and format.\n"
-    prompt += f"Question:{q}\n"
+    # prompt += "\n Now I have a math question.Please generate the thinking process and final answer for solving this math problem according to the above requirements and format.\n"
+    # prompt += f"Question:{q}\n"
+    prompt += "\n Now I have a math problem's query、solution and answer.Please rewrite the 'solution' into the thinking process for using a big language model to solve this math problem and the final result, in accordance with the aforementioned requirements and format.Sometimes feedback, associative thinking, reverse thinking etc. can also be added to demonstrate the thinking process of the model.\n"
+    prompt += f"Query:{q}\n"
+    prompt += f"Solution:{s}\n"
+    prompt += f"Answer:{a}\n"
     return prompt
 
 def get_answer(sample, client):
@@ -214,7 +218,7 @@ def get_answer(sample, client):
     一个带有自动重试逻辑的、更健壮的API请求函数。
     """
     prompt = construct_prompt(sample)
-    q, a = sample
+    q, s,a = sample
     
     max_retries = 5  # 设置一个请求最多重试5次
     retry_delay = 5  # 每次重试前，等待5秒
@@ -324,23 +328,24 @@ def main():
         print("数据加载完成")
 
         client = OpenAI(base_url=api_url_judge, api_key=api_key_judge)
-        start = 0
-        end = 10
+        start = 40
+        end = 50
         chunk_size = 50  # 设置块大小，每50条保存一次
-        output_file = "result_data_Olympids_qwen3-max_4o_10_try.xlsx"
+        output_file = "result_data_Olympids_qwen3-max_4o_40-50_sloution.xlsx"
         if start < 0 or end >= len(df) or start > end:
             print(f"索引无效！请确保 0≤start≤end<{len(df)}")
             return
         def process(i):
             sample = df.iloc[i]
-            answer = get_answer((sample["problem"],sample["answer"]), client)
+            answer = get_answer((sample["problem"],sample["solution"],sample["answer"]), client)
             if answer["judge"] != True:
                 print(sample["problem"],"第二次尝试")
-                answer = get_answer((sample["problem"], sample["answer"]), client)
+                answer = get_answer((sample["problem"],sample["solution"],sample["answer"]), client)
                 print(answer["judge"])
             return {
                 "question": sample["problem"],
                 "answer": sample["answer"],
+                "soluyion": sample["solution"],
                 "prompt": answer["all"],
                 "judge": answer["judge"],
             }
@@ -351,7 +356,7 @@ def main():
             
             print(f"正在处理索引从 {chunk_start} 到 {chunk_end - 1} 的数据...")
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
+            with ThreadPoolExecutor(max_workers=5) as executor:
                 # 处理当前块的所有样本
                 chunk_outputs = list(executor.map(process, range(chunk_start, chunk_end)))
 

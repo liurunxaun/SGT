@@ -39,13 +39,12 @@ from .utils.competitive_programming import score_subtask
 from rewards_graph import construct_graph_and_score
 from tests.utils.llm_judge import llm_judge_via_api
 
-def graph_reward(script_args, completions, **kwargs):
+def graph_reward(script_args, completions, **kwargs) -> list[Optional[float]]:
     rewards = []
 
     contents = [completion[0]["content"] for completion in completions]
     for content in contents:
         try:
-            # todo: 传进来的是Think content吗？
             reward = construct_graph_and_score(content, script_args)
             rewards.append(reward)
         except Exception as e:
@@ -741,7 +740,10 @@ def get_soft_overlong_punishment(max_completion_len, soft_punish_cache):
 
 def get_reward_funcs(script_args) -> list[Callable]:
     REWARD_FUNCS_REGISTRY = {
-        "graph": partial(graph_reward, script_args=script_args),
+        "graph": update_wrapper(
+            partial(graph_reward, script_args=script_args),
+            graph_reward,
+        ),
         "accuracy": accuracy_reward,
         "format": format_reward,
         "reasoning_steps": reasoning_steps_reward,

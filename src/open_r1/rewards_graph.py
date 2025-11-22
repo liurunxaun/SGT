@@ -137,18 +137,11 @@ def llm_judge_semantic_coherence(parent_text, child_text):
             return 0.0
         
 
-def count_tokens(text, script_args):
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        script_args.model_name_or_path,
-        trust_remote_code=True
-    )
-    
+def count_tokens(text, tokenizer):
     try:
         return len(tokenizer.encode(text))
     except:
-        return len(text)  # fallback
+        return len(text)
 
 
 # ============================================================
@@ -371,11 +364,17 @@ def reward_semantic_coherent(node_dict):
 #                     统一入口
 # ============================================================
 
-def construct_graph_and_score(think_content, script_args):
+def construct_graph_and_score(content, script_args):
     """
     根据 script_args.graph_reward_funcs 和 script_args.graph_reward_weights
     动态计算图奖励，并对权重做归一化处理。
     """
+    # step 0: 提取think内容
+    match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
+    if match:
+        think_content = match.group(1).strip()
+    else:
+        think_content = None
 
     # step 1: 构图
     G, node_dict = construct_graph(think_content)

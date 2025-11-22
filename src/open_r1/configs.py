@@ -329,3 +329,20 @@ class GRPOScriptArguments(ScriptArguments):
         default=4096,
         metadata={"help": "Minimum number of characters in completion."},
     )
+    
+    graph_reward_funcs: list[str] = field(
+        default_factory=lambda: [],
+        metadata={"help": "List of graph-based reward functions."}
+    )
+
+    graph_reward_weights: list[float] = field(
+        default_factory=lambda: [],
+        metadata={"help": "List of weights for graph-based reward functions."}
+    )
+
+    model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to pretrained model or model identifier."},
+    )
+
+
