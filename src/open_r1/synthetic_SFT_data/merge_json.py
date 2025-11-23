@@ -1,8 +1,8 @@
 import json
 
 # 定义文件路径
-file_paths = ['/data/home/the/rxliu/projects/open-r1-main/data/Olympiads-pre2000-sft-data-json/test.json', '/data/home/the/rxliu/projects/open-r1-main/data/GSM8K-pre1000*3-sft-data-json/test.json']
-output_file = '/data/home/the/rxliu/projects/open-r1-main/data/Olympiads+GSM8K-5000-sft-data-json/test.json'
+file_paths = ['/ssd5/rxliu/datasets/SFT-Data/Olympiads-pre2000-sft-data-json/test.json', '/ssd5/rxliu/datasets/SFT-Data/GSM8K-sft-data-json/test.json']
+output_file = '/ssd5/rxliu/datasets/SFT-Data/Olympiads-2000+GSM8K-7200-json/test.json'
 
 # 用于存放所有数据的空列表
 merged_data = []

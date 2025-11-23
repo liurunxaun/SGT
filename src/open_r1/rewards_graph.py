@@ -137,11 +137,9 @@ def llm_judge_semantic_coherence(parent_text, child_text):
             return 0.0
         
 
-def count_tokens(text, tokenizer):
-    try:
-        return len(tokenizer.encode(text))
-    except:
-        return len(text)
+def count_tokens(text):
+    
+    return len(text)
 
 
 # ============================================================
@@ -167,6 +165,7 @@ def reward_label_structure(
        - known: parents = 0
        - aggregate: parents > 1
        - refine: parents = 1
+       - feedback: parents里必须有当前的last node
 
     3. 同一标签内的节点不能互相作为父节点（不能互相引用）
        - 若一个 label 下多个节点，任一节点的 parent 中不能包含该 label 的其他节点
@@ -174,7 +173,7 @@ def reward_label_structure(
 
     score = 0.0
 
-    # 规则1：标签数量要求
+    # 规则1：标签内节点数量要求
     def rule_node_number():
         label_require = {"aggregate": 1, "refine": 1}
         for lb, required in label_require.items():
@@ -197,6 +196,10 @@ def reward_label_structure(
                     return 0.0
             elif label == "refine":
                 if pnum != 1:
+                    return 0.0
+            elif label == "feedback":
+                # 当前节点 nid 的父节点必须包含 nid - 1
+                if (nid - 1) not in info["parents"]:
                     return 0.0
         return 1.0
 
@@ -247,10 +250,10 @@ def reward_reachability(G, node_dict):
     return 0.0
 
 
-def reward_effective_subgraph_information_proportion(think_content, G, node_dict, script_args):
+def reward_effective_subgraph_information_proportion(think_content, G, node_dict):
     """
     计算有效推理子图的信息量占比。
-    1. 找 start → end 的最短路径 P
+    1. 找 start → end 的最长路径 P
     2. 找所有从 P 分出去、最终又回到 P 的分支节点 B
     3. E = P ∪ B
     4. 计算 token 信息量： sum(E) / sum(all)
@@ -261,19 +264,21 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
     if not start_nodes or not end_nodes:
         return 0.0
 
-    # Step 2: 找 start → end 的最短路径 P
+    # Step 2: 找 start → end 的最长路径 P
     best_path = None
-    best_length = float('inf')
+    best_length = -1    # ⭐ 初始为 -1 ，这样任何路径长度都比它大
 
     for s in start_nodes:
         for e in end_nodes:
             try:
-                path = nx.shortest_path(G, s, e)
-                if len(path) < best_length:
-                    best_path = path
-                    best_length = len(path)
+                # 遍历所有 simple path（自动避免环）
+                for path in nx.all_simple_paths(G, s, e):
+                    if len(path) > best_length:
+                        best_path = path
+                        best_length = len(path)
             except nx.NetworkXNoPath:
                 continue
+
 
     # 如果完全找不到路径
     if best_path is None:
@@ -320,13 +325,13 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
     # Step 5: 基于 think_content 计算 token 比例
     
     # 全部 token
-    total_tokens = count_tokens(think_content, script_args)
+    total_tokens = count_tokens(think_content)
     # 有效 token：将 effective_nodes 的内容拼接
     effective_texts = []
     for nid in effective_nodes:
         effective_texts.append(node_dict[nid]["content"])
 
-    effective_tokens = count_tokens("\n".join(effective_texts), script_args)
+    effective_tokens = count_tokens("\n".join(effective_texts))
 
     if total_tokens == 0:
         return 0.0
@@ -357,9 +362,6 @@ def reward_semantic_coherent(node_dict):
     return sum(all_scores) / len(all_scores)
 
 
-
-
-
 # ============================================================
 #                     统一入口
 # ============================================================
@@ -384,9 +386,9 @@ def construct_graph_and_score(content, script_args):
         "reachability": lambda: reward_reachability(G, node_dict),
         "connectivity": lambda: reward_connectivity(G),
         "label_structure": lambda: reward_label_structure(node_dict),
+        "effective_subgraph_information_proportion": lambda: reward_effective_subgraph_information_proportion(think_content, G, node_dict),
         "semantic_coherent": lambda: reward_semantic_coherent(node_dict),
-        "effective_subgraph_information_proportion": lambda: reward_effective_subgraph_information_proportion(think_content, G, node_dict, script_args),
-    }
+        }
 
     funcs = script_args.graph_reward_funcs
     weights = script_args.graph_reward_weights

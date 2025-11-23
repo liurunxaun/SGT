@@ -19,18 +19,21 @@ Usage:
 
 # One 1 node of 8 x H100s
 accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
-    --model_name_or_path open-r1/Qwen2.5-Math-7B-RoPE-300k \
-    --dataset_name open-r1/Mixture-of-Thoughts \
-    --dataset_config all \
-    --eos_token '<|im_end|>' \
-    --learning_rate 4.0e-5 \
-    --num_train_epochs 5 \
-    --max_seq_length 32768 \
-    --per_device_train_batch_size 2 \
-    --gradient_checkpointing \
-    --bf16 \
-    --use_liger_kernel \
-    --output_dir data/OpenR1-Distill-7B
+--model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
+--dataset_name /data/home/the/rxliu/projects/open-r1-main/data/Olympiads+GSM8K-5000-sft-data-parquet \
+--dataset_config default \
+--learning_rate 3.0e-5 \
+--num_train_epochs 5 \
+--max_seq_length 32768 \
+--per_device_train_batch_size 8 \
+--gradient_checkpointing \
+--bf16 \
+--use_liger_kernel \
+--report_to wandb \
+--run_name Qwen3-8B-Math-SFT-Epoch5 \
+--logging_steps 1 \
+--output_dir output/Qwen3-8B-Olympiads+GSM8K-5000-sft-data-SFT \
+--do_eval
 """
 
 import logging

@@ -340,9 +340,4 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "List of weights for graph-based reward functions."}
     )
 
-    model_name_or_path: Optional[str] = field(
-        default=None,
-        metadata={"help": "Path to pretrained model or model identifier."},
-    )
-
 

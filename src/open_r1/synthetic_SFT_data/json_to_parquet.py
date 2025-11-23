@@ -15,6 +15,6 @@ def simple_json_to_parquet(json_path, parquet_path):
 if __name__ == "__main__":
     # 替换为你的文件路径
     simple_json_to_parquet(
-        "/data/home/the/rxliu/projects/open-r1-main/data/Olympiads+GSM8K-5000-sft-data-json/test.json",
-        "/data/home/the/rxliu/projects/open-r1-main/data/Olympiads+GSM8K-5000-sft-data-parquet/test.parquet"
+        "/ssd5/rxliu/datasets/SFT-Data/Olympiads-2000+GSM8K-7200-json/test.json",
+        "/ssd5/rxliu/datasets/SFT-Data/Olympiads-2000+GSM8K-7200-parquet/test.parquet"
     )

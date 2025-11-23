@@ -22,34 +22,92 @@ You are a helpful AI Assistant that provides well-reasoned and detailed response
 Besides, you must comply with below conditions:
 1.During the <think> phase you should organize the chain of thought using below tags:
 - known: known conditions that can be found in the question.
-- generate: from the current node, generate one or more new node(s).
-- aggregate: merge multiple nodes or jointly reason over them to produce a new node.
-- feedback: go back to a previous node.
-- refine: improve the current node.
+- generate: from the current reasoning state, generate one or more new reasoning steps. It represents a step forward in the process of reasoning.
+- aggregate: merge multiple steps or jointly reason over them to produce a new reasoning step.
+- feedback: go back to a previous reasoning step. Used to re-examine the correctness of a step or process.
+- refine: improve the current node. It is a refined modification of a certain node's statement, without producing a substantial step forward in the reasoning process.
 - associative thinking: comparing the curent reasoning graph structure with other similar graph structures, in order to facilitate the current reasoning process. For example, when solving a math problem, recalling the solution methods used in previous similar problems.
-- reverse thinking: starting from the goal of the problem, considering possible solution paths, and filtering them with the given conditions. This builds a reverse reasoning path from the goal to the conditions, from the unknown to the known, leading to the final answer.
-At each further reasoning step you must choose one of these seven tags and wrap that step’s output with the chosen tag. For example: <Generate>...</Generate>
-The complete think phase must start with <know>...</konwn>, and the final inference tag must include the final result of the question.
-2.The tag content inside is a series of thinking steps, organized in a node based manner with node_id and parents. You need to ensure that the thinking process is coherent and effective, and ultimately these nodes can be organized into a directed graph. The format example for each node is as follows:
+- reverse thinking: starting from the goal of the problem, considering possible solution paths, and filtering them with the given conditions. This builds a abstruct reverse reasoning path from the goal to the conditions, from the unknown to the known. At this stage, you do not need to perform specific actions to get the answer. You just need to use reverse thinking to think about the reasoning method. The specific reasoning will be performed in the following tags.
+2.At each further reasoning step you must choose one of these tags and wrap that step’s output with the chosen tag. For example: <generate>...</generate>
+3.The complete think phase must start with <known>...</konwn>, and the final inference tag must include the final result of the question.
+4.The tag content inside is a series of thinking steps, organized in a node based manner with node_id and parents. You need to ensure that the thinking process is coherent and effective, and ultimately these nodes can be organized into a directed graph. The format example for each node is as follows:
 {
     node_id:The unique identifier of a node, usually an integer, increasing from 1.
     parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
     content:The content of this step
 }
-For the content wrapped in different tags, there are the following formal requirements:
+5.For the content wrapped in different tags, there are the following formal requirements:
 - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
-- generate:(1) It wraps one node, and the parents of this nodes should be a single node. (2) It wraps two or more nodes, and the parents of these nodes should be a same single node.
+- generate:It wraps one or more nodels, (1) If it wraps one node, the parents of this nodes should be a single node. (2) If it wraps two or more nodes, the parents of these nodes should be a same single node.
 - aggregate：It wraps one node, and the parent of this node should be multiple nodes.
-- feedback：It wraps one node, and the parent of this node should be one or more nodes. more nodes. In addition, its parent_ids must include the last node in the current reasoning chain.
-- refine:It wraps one node, and the parent of this node should be a single node.
+- feedback：It wraps one node, and the parent of this node should be one or more nodes. Its parent_ids must include the last node of the current reasoning chain.
+- refine: It wraps one node, and the parent of this node should be the last node in the current reasoning chain.
 - associative thinking：It wraps one node, and the parent of this node should be one or more nodes.
 - reverse thinking：It wraps one node, and the parent of this node should be one or more nodes.
-If a tag contains multiple nodes, the parents of these nodes cannot contain other nodes in the tag.
-If a tag contains multiple nodes, the nodes should be separated by commas. Within a node, different fields do not require commas and should be separated by line breaks. 
+6.If a tag contains multiple nodes, the parents of these nodes cannot contain other nodes in the tag.
+7.If a tag contains multiple nodes, the nodes should be separated by commas. Within a node, different tags do not require commas and should be separated by line breaks. 
 
 Please strictly follow the above format and requirements.
-Below I’ll give you an example:
-question：Find the sum of all integer bases b>9 for which 17_{b} is a divisor of 97_{b}
+Below I’ll give you some examples:
+question 1:Find the smallest number \( n \) such that given any \( n \) distinct numbers from \(\{1, 2, 3, \ldots, 999\}\), one can choose four different numbers \( a, b, c, d \) such that \( a + 2b + 3c = d \).
+
+<think>
+  <known>
+    {
+      node_id:1
+      parents:none
+      content:The set is {1, 2, ..., 999}
+    },
+    {
+      node_id:2
+      parents:none
+      content:We are to find the smallest n such that any subset of size n contains distinct a,b,c,d with a + 2b + 3c = d
+    },
+    {
+      node_id:3
+      parents:none
+      content:a, b, c, d must be distinct elements from the chosen n numbers
+    }
+  </known>
+
+  <reverse thinking>
+    {
+      node_id:4
+      parents:2
+      content:To find the minimal n that forces the equation a + 2b + 3c = d to hold among any n-element subset, we consider the maximal size of a subset that avoids this equation; then n is one more than that maximum.
+    }
+  </reverse thinking>
+
+  <generate>
+    {
+      node_id:5
+      parents:4
+      content:Let S ⊆ {1,...,999} be a subset with no four distinct elements satisfying a + 2b + 3c = d. We want to maximize |S|.
+    }
+  </generate>
+
+  <associative thinking>
+    {
+      node_id:6
+      parents:5
+      content:This resembles extremal combinatorics problems like Schur's theorem or sum-free sets. In such problems, choosing large numbers often avoids linear equations because the RHS (d) would exceed the universe bound.
+    }
+  </associative thinking>
+
+  <generate>
+    {
+      node_id:7
+      parents:6
+      content:If we choose only large numbers, say all numbers > T, then a + 2b + 3c ≥ 1*T + 2*T + 3*T = 6T, so if 6T > 999, then d = a + 2b + 3c ∉ {1,...,999}, hence cannot be in S.
+    }
+  </generate>
+  
+  ......
+I omitted the subsequent reasoning and answer generation process. In this example, you mainly learned how to use reverse thinking and associated thinking.
+
+
+question 2：Find the sum of all integer bases b>9 for which 17_{b} is a divisor of 97_{b}
+
 <think>
 
   <known>
@@ -203,11 +261,10 @@ question：Find the sum of all integer bases b>9 for which 17_{b} is a divisor o
   70
 
 </answer>
-
     """
     # prompt += "\n Now I have a math question.Please generate the thinking process and final answer for solving this math problem according to the above requirements and format.\n"
     # prompt += f"Question:{q}\n"
-    prompt += "\n Now I have a math problem's query、solution and answer.Please rewrite the 'solution' into the thinking process for using a big language model to solve this math problem and the final result, in accordance with the aforementioned requirements and format.Sometimes feedback, associative thinking, reverse thinking etc. can also be added to demonstrate the thinking process of the model.\n"
+    prompt += "\n Now I have a math problem's query、solution and answer.Please rewrite the 'solution' into the thinking process for using a big language model to solve this math problem and the final result, in accordance with the aforementioned requirements and format.Sometimes feedback, associative thinking, reverse thinking etc. can also be added to demonstrate the thinking process of the model.Your reasoning process should not reflect that I provided the reference problem-solving process to you.\n"
     prompt += f"Query:{q}\n"
     prompt += f"Solution:{s}\n"
     prompt += f"Answer:{a}\n"
@@ -328,10 +385,10 @@ def main():
         print("数据加载完成")
 
         client = OpenAI(base_url=api_url_judge, api_key=api_key_judge)
-        start = 40
-        end = 50
+        start = 2700
+        end = len(df)-1
         chunk_size = 50  # 设置块大小，每50条保存一次
-        output_file = "result_data_Olympids_qwen3-max_4o_40-50_sloution.xlsx"
+        output_file = "/ssd5/rxliu/data/result_data_Olympids_qwen3-max_sloution.xlsx"
         if start < 0 or end >= len(df) or start > end:
             print(f"索引无效！请确保 0≤start≤end<{len(df)}")
             return
@@ -345,7 +402,7 @@ def main():
             return {
                 "question": sample["problem"],
                 "answer": sample["answer"],
-                "soluyion": sample["solution"],
+                "solution": sample["solution"],
                 "prompt": answer["all"],
                 "judge": answer["judge"],
             }
