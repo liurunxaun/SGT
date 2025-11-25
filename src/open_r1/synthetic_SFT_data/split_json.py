@@ -3,9 +3,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split # 更专业的拆分方法
 
 # --- 配置 ---
-input_file = '/ssd5/rxliu/datasets/SFT-Data/result_data_GSM8K.json'
-train_output_file = '/ssd5/rxliu/datasets/SFT-Data/GSM8K-sft-data-json/train.json'
-test_output_file = '/ssd5/rxliu/datasets/SFT-Data/GSM8K-sft-data-json/test.json'
+input_file = '/ssd5/rxliu/datasets/SFT-Data/result_data_Olympids_hard.json'
+train_output_file = '/ssd5/rxliu/datasets/SFT-Data/Olympiads_hard-sft-data-json/train.json'
+test_output_file = '/ssd5/rxliu/datasets/SFT-Data/Olympiads_hard-sft-data-json/test.json'
 
 # 1:9 的比例，意味着测试集占 10% (0.1)，训练集占 90% (0.9)
 TEST_SIZE = 0.1

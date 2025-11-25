@@ -339,10 +339,11 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
     return effective_tokens / total_tokens
 
 
-def reward_semantic_coherent(node_dict):
+def reward_search(G, node_dict):
     """
-    对每个节点的内容和其父节点的内容进行语义连贯性评价。
-    返回 0~1 分。
+    1. 搜索推理图
+    2. 对每个节点的内容和其父节点,子节点的内容进行语义连贯性评价。
+    3. 返回 0~1 分
     """
     all_scores = []
 
@@ -387,7 +388,7 @@ def construct_graph_and_score(content, script_args):
         "connectivity": lambda: reward_connectivity(G),
         "label_structure": lambda: reward_label_structure(node_dict),
         "effective_subgraph_information_proportion": lambda: reward_effective_subgraph_information_proportion(think_content, G, node_dict),
-        "semantic_coherent": lambda: reward_semantic_coherent(node_dict),
+        "search": lambda: reward_search(G, node_dict),
         }
 
     funcs = script_args.graph_reward_funcs

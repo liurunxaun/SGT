@@ -18,22 +18,31 @@ Supervised fine-tuning script for decoder language models.
 Usage:
 
 # One 1 node of 8 x H100s
-accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
---model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
---dataset_name /data/home/the/rxliu/projects/open-r1-main/data/Olympiads+GSM8K-5000-sft-data-parquet \
---dataset_config default \
---learning_rate 3.0e-5 \
---num_train_epochs 5 \
---max_seq_length 32768 \
---per_device_train_batch_size 8 \
---gradient_checkpointing \
---bf16 \
---use_liger_kernel \
---report_to wandb \
---run_name Qwen3-8B-Math-SFT-Epoch5 \
---logging_steps 1 \
---output_dir output/Qwen3-8B-Olympiads+GSM8K-5000-sft-data-SFT \
---do_eval
+export PYTHONPATH=~/rxliu/projects/open-r1-main/src:$PYTHONPATH
+unset http_proxy
+unset https_proxy
+unset HTTP_PROXY
+unset HTTPS_PROXY
+unset all_proxy
+unset ALL_PROXY
+accelerate launch \
+    --config_file=recipes/accelerate_configs/zero3.yaml \
+    src/open_r1/sft.py \
+    --model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
+    --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
+    --dataset_config default \
+    --learning_rate 3.0e-5 \
+    --num_train_epochs 5 \
+    --max_seq_length 32768 \
+    --per_device_train_batch_size 8 \
+    --gradient_checkpointing \
+    --bf16 \
+    --use_liger_kernel \
+    --report_to wandb \
+    --run_name Qwen3-8B-Math-SFT-Epoch5 \
+    --logging_steps 1 \
+    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-data-SFT \
+    --eval_strategy epoch
 """
 
 import logging
@@ -52,7 +61,7 @@ from open_r1.utils.wandb_logging import init_wandb_training
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
 os.environ["WANDB_API_KEY"] = '7b5e421309a7f263058faebac5cb0bc4e74608f2'
-
+os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-8b-SFT"
 logger = logging.getLogger(__name__)
 
 
@@ -85,7 +94,8 @@ def main(script_args, training_args, model_args):
     if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
         logger.info(f"Checkpoint detected, resuming training at {last_checkpoint=}.")
 
-    if "wandb" in training_args.report_to:
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    if local_rank == 0 and "wandb" in training_args.report_to:
         init_wandb_training(training_args)
 
     ######################################

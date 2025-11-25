@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from datasets import load_from_disk
 import torch
@@ -9,18 +9,21 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 # ====== 配置区 ======
 
-HUMANEVALPLUS_DISK_DIR = "evalplus_data/humanevalplus"
-# 请修改为你的模型路径
+HUMANEVALPLUS_DISK_DIR = "/ssd5/rxliu/datasets/humanevalplus"
+# 模型路径
 MODEL_PATH = "/ssd5/rxliu/models/output/Qwen3-8B-Olympiads-2000+GSM8K-7200-sft-data-SFT" 
-OUTPUT_JSONL = "samples_humanevalplus_structured_cot.jsonl"
 
-# ⚠️ 关键设置：因为你的思考过程包含大量 JSON 节点，非常占 Token
-# 建议至少设置 2048，如果显存允许，最好 4096，防止答案被截断
+# 1. 提交给评测工具的文件 (JSONL)
+OUTPUT_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/samples_humanevalplus_structured_cot.jsonl"
+# 2. 给你自己看的思考过程日志 (Markdown) <--- 新增
+OUTPUT_THOUGHT_LOG = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/thought_process_log.md"
+
+# 建议设置大一点，防止思考过程被截断
 MAX_NEW_TOKENS = 16384  
 TEMPERATURE = 0.0
 TOP_P = 1.0
 
-# ====== 核心修改 1: 填入你 SFT 时的完整 System Prompt ======
+# ====== System Prompt & 1-Shot Example (已替换为你提供的新版本) ======
 SYSTEM_PROMPT = """You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>
 ...
 </think>
@@ -43,9 +46,9 @@ Besides, you must comply with below requirements:
 4.The complete think phase must start with <known>...</konwn>, and the final inference tag must include the final result of the question and must belong to one of the seven tags mentioned above.
 5.The tag content inside is a series of thinking steps, organized in a node based manner with node_id and parents. You need to ensure that the thinking process is coherent and effective, and ultimately these nodes can be organized into a directed graph. The format example for each node is as follows:
 {
-    node_id:The unique identifier of a node, usually an integer, increasing from 1.
-    parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
-    content:The content of this step. **WARNING: When writing code inside JSON, ensure all quotes (\") and newlines (\\n) are properly escaped.**
+    node_id:The unique identifier of a node, usually an integer, increasing from 1.
+    parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
+    content:The content of this step. **WARNING: When writing code inside JSON, ensure all quotes (") and newlines (\\n) are properly escaped.**
 }
 6.For the content wrapped in different tags, there are the following formal requirements:
 - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
@@ -60,10 +63,14 @@ Besides, you must comply with below requirements:
 **9. Anti-Looping Rule: Do not perform mental simulations in a loop within a single node. If you calculate a value or transform a string, WRITE IT DOWN as a fact in the content and move on. Do not go back to question it unless a 'feedback' step proves it wrong.**
 Please strictly follow the above format and requirements.
 Below I’ll give you some examples:"""
-ONE_SHOT_EXAMPLE_USER = """You are given an integer array `coins` representing coins of different denominations and an integer `amount` representing a total amount of money. Return the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up by any combination of the coins, return -1.
-Example: `coins = [1, 2, 5]`, `amount = 11`. Output: `3` (5 + 5 + 1)."""
 
-ONE_SHOT_EXAMPLE_ASSISTANT = '''<think>
+ONE_SHOT_EXAMPLE_USER = """
+You are given an integer array `coins` representing coins of different denominations and an integer `amount` representing a total amount of money. Return the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up by any combination of the coins, return -1.
+Example: `coins = [1, 2, 5]`, `amount = 11`. Output: `3` (5 + 5 + 1).
+"""
+
+ONE_SHOT_EXAMPLE_ASSISTANT = """
+<think>
   <known>
     {
       node_id:1
@@ -73,91 +80,119 @@ ONE_SHOT_EXAMPLE_ASSISTANT = '''<think>
     {
       node_id:2
       parents:none
-      content:Constraints: 'amount' can be 0 (return 0). If unsolvable, return -1. Coins are positive.
+      content:Constraints: 'amount' can be 0 (return 0). If unsolvable, return -1. Coins are positive integers.
+    },
+    {
+      node_id:3
+      parents:none
+      content:Edge Cases: Coins list is empty; Amount is negative; Large amount vs small coins (performance).
     }
   </known>
 
+  <reverse thinking>
+    {
+      node_id:4
+      parents:1
+      content:To reach the target 'amount' with minimum coins, the last coin added must be some coin 'c' from the list. This means the problem reduces to finding min coins for 'amount - c'. This recursive structure implies we solve from 0 up to 'amount'.
+    }
+  </reverse thinking>
+
   <associative thinking>
     {
-      node_id:3
-      parents:1
-      content:First thought: Greedy Strategy. Always take the largest coin possible to reduce the count rapidly.
+      node_id:5
+      parents:4
+      content:This structure looks like the 'Unbounded Knapsack Problem'. A common approach is Greedy (always take largest) or Dynamic Programming. Let's try to verify if Greedy works because it is faster.
     }
   </associative thinking>
 
   <feedback>
     {
-      node_id:4
-      parents:3
-      content:Verify Greedy: Let's test Edge Case. Coins=[1, 3, 4], Amount=6. Greedy path: Take 4. Remaining=2. Take 1, 1. Total=3. Optimal: Take 3, 3. Total=2. Conclusion: Greedy fails. Must use Dynamic Programming.
+      node_id:6
+      parents:5
+      content:Verifying Greedy: Counter-example check. Coins=[1, 3, 4], Amount=6.
+Greedy path: Take 4, remain 2. Take 1, remain 1. Take 1. Total 3 coins (4+1+1).
+Optimal path: Take 3, remain 3. Take 3. Total 2 coins (3+3).
+Conclusion: Greedy FAILS. Must use Dynamic Programming.
     }
   </feedback>
 
   <generate>
     {
-      node_id:5
-      parents:4
-      content:Plan (DP approach): Define dp[i] as min coins for amount 'i'. Base case dp[0]=0. Transition: dp[i] = min(dp[i], dp[i-coin]+1). Init array with amount+1 (infinity).
+      node_id:7
+      parents:6
+      content:Plan (DP approach):
+1. Create array dp[amount + 1] initialized to 'infinity' (amount + 1).
+2. Set dp[0] = 0.
+3. Iterate i from 1 to amount.
+4. For each coin, if i >= coin, dp[i] = min(dp[i], dp[i-coin] + 1).
     }
   </generate>
 
-  <known>
-    {
-      node_id:6
-      parents:none
-      content:Edge Case Check: If coins is empty? Return -1. If amount < 0? Return -1.
-    }
-  </known>
-
   <aggregate>
     {
-      node_id:7
-      parents:2,5,6
-      content:Integrating DP logic with constraints: 1. Handle amount=0. 2. Init dp array. 3. Loop 1 to amount. 4. Inner loop coins. 5. Check if reachable.
+      node_id:8
+      parents:2,3,7
+      content:Combine DP Plan with Edge Cases:
+If amount is 0, return 0 immediately.
+After DP loop, if dp[amount] > amount, implies no solution, return -1.
     }
   </aggregate>
 
   <generate>
     {
-      node_id:8
-      parents:7
+      node_id:9
+      parents:8
       content:Implementation Code:
 def coin_change(coins, amount):
-    if amount == 0:
-        return 0
+    if amount == 0: return 0
     max_val = amount + 1
-    dp = [max_val] * (amount + 1)
+    dp = [max_val] * (max_val)
     dp[0] = 0
     for i in range(1, amount + 1):
         for coin in coins:
             if i - coin >= 0:
                 dp[i] = min(dp[i], dp[i - coin] + 1)
     return dp[amount] if dp[amount] != max_val else -1
-}
-</generate> <feedback> { node_id:9 parents:8 content:Dry Run Trace: Input coins=[1,2], amount=3. Init dp=[0, 4, 4, 4]. i=1: coin=1->dp[1]=1. coin=2->skip. dp=[0,1,4,4]. i=2: coin=1->dp[2]=2. coin=2->dp[2]=1. dp=[0,1,1,4]. i=3: coin=1->dp[3]=2. coin=2->dp[3]=2. dp=[0,1,1,2]. Result: 2. Correct. } </feedback> <refine> { node_id:10 parents:9 content:The trace confirms the logic handles optimal substructure correctly. Code is O(amount * len(coins)). } </refine> </think> <answer>
 
+}
+  </generate> 
+  
+  <feedback> 
+    { node_id:10 
+      parents:9 
+      content:Dry Run Trace: Input: coins=[1, 2], amount=3. Init: dp=[0, 4, 4, 4]. i=1: coin=1 -> dp[1]=min(4, dp[0]+1)=1. dp=[0,1,4,4]. i=2: coin=1 -> dp[2]=min(4, dp[1]+1)=2. coin=2 -> dp[2]=min(2, dp[0]+1)=1. dp=[0,1,1,4]. i=3: coin=1 -> dp[3]=min(4, dp[2]+1)=2. coin=2 -> dp[3]=min(2, dp[1]+1)=2. dp=[0,1,1,2]. Result: 2. Logic holds. 
+    } 
+  </feedback> 
+      
+</think> 
+      
+<answer>
+Python
 from typing import List
 
 def coin_change(coins: List[int], amount: int) -> int:
+    \"\"\"
+    Computes the fewest number of coins needed to make up the amount.
+    Returns -1 if impossible.
+    \"\"\"
+    if amount == 0:
+        return 0
+
+    # Initialize DP array. amount + 1 acts as infinity.
+    max_val = amount + 1
+    dp = [max_val] * (amount + 1)
+    dp[0] = 0
+
+    for i in range(1, amount + 1):
+        for coin in coins:
+            for coin in coins:
+                if coin <= i:
+                    dp[i] = min(dp[i], dp[i - coin] + 1)
+
+    return dp[amount] if dp[amount] <= amount else -1
+</answer>
 """
-Computes the fewest number of coins needed to make up the amount.
-Returns -1 if impossible.
-"""
-if amount == 0:
-return 0
 
-# Initialize DP array. amount + 1 acts as infinity.
-max_val = amount + 1
-dp = [max_val] * (amount + 1)
-dp[0] = 0
-
-for i in range(1, amount + 1):
-    for coin in coins:
-        if coin <= i:
-            dp[i] = min(dp[i], dp[i - coin] + 1)
-
-return dp[amount] if dp[amount] <= amount else -1
-</answer> ''' 
 # ====== 加载模型 ======
 print(f"Loading model from {MODEL_PATH} ...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
@@ -169,37 +204,29 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model.eval()
 
-# ====== 核心修改 2: 针对你的格式编写提取逻辑 ======
+# ====== 提取与清洗逻辑 ======
 
 def extract_answer(text: str) -> str:
-    """
-    专门解析你的格式： <think>...</think><answer>...</answer>
-    我们需要提取 <answer> 里面的内容，并清洗 Markdown。
-    """
-    
-    # 1. 尝试提取 <answer> 标签内的内容
-    #    re.DOTALL 让 . 能够匹配换行符
+    """提取 <answer> 内容，并清洗 Markdown 格式，只保留代码"""
     match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL | re.IGNORECASE)
     
     if match:
         content = match.group(1).strip()
     else:
-        # Fallback: 如果模型没写 </answer> (可能被截断)，或者是格式崩了
-        # 我们尝试去掉 <think> 部分，保留剩下的
+        # Fallback: 去掉 <think> 剩下的都算 answer
         content = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-        # 如果模型连 <answer> 开头都没写，那可能内容就在最后，不做额外处理
-        # 但通常建议去掉 <answer> 开头标签（如果存在）
         content = content.replace('<answer>', '').strip()
 
-    # 2. 清洗 Markdown 代码块标记 (```python ... ```)
-    #    很多模型在 <answer> 里还是会习惯性加 markdown
+    # 清洗 ```python 和 ```
     content = re.sub(r'^```python', '', content, flags=re.MULTILINE)
     content = re.sub(r'^```', '', content, flags=re.MULTILINE)
     
     return content.strip()
 
-def gen_solution(humaneval_prompt: str) -> str:
-    # 构造更强的 User Instruction，明确告知这是编程任务
+def gen_solution(humaneval_prompt: str) -> Tuple[str, str]:
+    """
+    修改点：返回 (清洗后的代码, 原始的完整输出)
+    """
     user_target_content = f"""Please complete the following Python function. 
 Apply the graph-structured reasoning format (nodes, edges, tags) learned from math problems to this coding problem.
 Analyze the logic first in <think>, then output code in <answer>.
@@ -207,20 +234,13 @@ Analyze the logic first in <think>, then output code in <answer>.
 Problem:
 {humaneval_prompt}"""
     
-    # 构造 Messages，插入 1-Shot 样例
     messages = [
-        # 1. System Prompt (保持不变，是你那一长串规则)
         {"role": "system", "content": SYSTEM_PROMPT},
-        
-        # 2. 插入 1-Shot Example (教它迁移)
         {"role": "user", "content": ONE_SHOT_EXAMPLE_USER},
         {"role": "assistant", "content": ONE_SHOT_EXAMPLE_ASSISTANT},
-        
-        # 3. 真正的测试题
         {"role": "user", "content": user_target_content}
     ]
     
-    # 应用 Chat 模板
     text_input = tokenizer.apply_chat_template(
         messages, 
         tokenize=False, 
@@ -228,8 +248,6 @@ Problem:
     )
     
     inputs = tokenizer(text_input, return_tensors="pt").to(model.device)
-
-    # 记录 prompt 长度，方便后面截取
     input_len = inputs.input_ids.shape[1]
 
     with torch.no_grad():
@@ -240,25 +258,21 @@ Problem:
             temperature=TEMPERATURE,
             top_p=TOP_P,
             eos_token_id=tokenizer.eos_token_id,
-            # 你的 SFT 数据里可能有特定的停止符，如果没有就默认 EOS
         )
 
-    # 只解码生成的新内容
     generated_ids = outputs[0][input_len:]
     generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 
-    # --- 后处理 ---
-    # 此时 generated_text 应该是： "<think>...JSON...</think><answer>def ...</answer>"
-    
+    # 提取代码
     final_code_body = extract_answer(generated_text)
     
-    # 拼接 HumanEval 的 prompt (如果模型输出里不包含 def 头的话)
+    # 拼接最终代码（兼容模型可能没写 def 头的情况）
     if "def " in final_code_body:
         solution = final_code_body
     else:
         solution = humaneval_prompt + "\n" + final_code_body
 
-    return solution
+    return solution, generated_text
 
 # ====== 主函数 ======
 
@@ -268,37 +282,59 @@ def main():
     test_set = ds["test"]
 
     out_path = Path(OUTPUT_JSONL)
-    if out_path.exists():
-        print(f"[Warn] Output {out_path} already exists, it will be overwritten.")
-        out_path.unlink()
+    log_path = Path(OUTPUT_THOUGHT_LOG)
+
+    # 创建父目录（如果不存在）
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Generating solutions for {len(test_set)} tasks ...")
     
-    # 计数器：记录有多少个题目成功生成了 <answer> 标签
+    # 格式依从性计数器
     format_success_count = 0 
 
-    with out_path.open("w", encoding="utf-8") as f:
+    # 同时打开 JSONL (写代码) 和 MD (写思考过程)
+    with out_path.open("w", encoding="utf-8") as f_json, \
+         log_path.open("w", encoding="utf-8") as f_log:
+        
+        # 写入 Markdown 标题
+        f_log.write("# HumanEval+ Graph CoT Thought Process Log\n\n")
+
         for i, problem in enumerate(test_set):
             task_id = problem["task_id"]
             prompt = problem["prompt"]
 
             print(f"[{i+1}/{len(test_set)}] Generating for task {task_id} ...")
             try:
-                solution = gen_solution(prompt)
-                # 简单的检查：如果 solution 不为空，说明至少提取到了东西
+                # 获取 solution 和 raw_text
+                solution, raw_text = gen_solution(prompt)
+                
                 if solution.strip():
                     format_success_count += 1
             except Exception as e:
                 print(f"  !! Error when generating for {task_id}: {e}")
                 solution = ""
+                raw_text = f"Error: {e}"
 
+            # 1. 写入 JSONL (EvalPlus 用)
             sample: Dict[str, Any] = {
                 "task_id": task_id,
                 "solution": solution,
             }
-            f.write(json.dumps(sample, ensure_ascii=False) + "\n")
+            f_json.write(json.dumps(sample, ensure_ascii=False) + "\n")
+
+            # 2. 写入 Markdown (给你看)
+            f_log.write(f"## Task: {task_id}\n")
+            f_log.write(f"### Prompt\n```python\n{prompt}\n```\n\n")
+            f_log.write(f"### Model Output (Think + Answer)\n")
+            # 使用引用块或代码块包裹，防止格式混乱
+            f_log.write(f"```text\n{raw_text}\n```\n")
+            f_log.write(f"\n---\n\n")
+            
+            # 立即刷新缓冲区，防止程序中断丢失日志
+            f_log.flush()
 
     print(f"Done! Samples saved to {out_path}")
+    print(f"Thought process saved to {log_path}")
     print(f"Approximate format adherence: {format_success_count}/{len(test_set)}")
 
 

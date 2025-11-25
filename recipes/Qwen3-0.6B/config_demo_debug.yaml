@@ -67,7 +67,7 @@ graph_reward_funcs:
 - connectivity
 - label_structure
 - effective_subgraph_information_proportion
-- semantic_coherent
+- search
 graph_reward_weights:
 - 5.0
 - 2.0
