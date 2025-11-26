@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
 from datasets import load_from_disk
 import torch
@@ -15,15 +15,17 @@ MODEL_PATH = "/ssd5/rxliu/models/output/Qwen3-8B-Olympiads-2000+GSM8K-7200-sft-d
 
 # 1. 提交给评测工具的文件 (JSONL)
 OUTPUT_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/samples_humanevalplus_structured_cot.jsonl"
-# 2. 给你自己看的思考过程日志 (Markdown) <--- 新增
+# 2. 给你自己看的思考过程日志 (Markdown)
 OUTPUT_THOUGHT_LOG = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/thought_process_log.md"
+# 3. 保存提取出的节点结构文件 (JSONL) <--- 新增
+OUTPUT_NODES_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/nodes_humanevalplus.jsonl"
 
 # 建议设置大一点，防止思考过程被截断
-MAX_NEW_TOKENS = 16384  
+MAX_NEW_TOKENS = 16384 
 TEMPERATURE = 0.0
 TOP_P = 1.0
 
-# ====== System Prompt & 1-Shot Example (已替换为你提供的新版本) ======
+# ====== System Prompt & 1-Shot Example ======
 SYSTEM_PROMPT = """You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>
 ...
 </think>
@@ -223,9 +225,26 @@ def extract_answer(text: str) -> str:
     
     return content.strip()
 
+def extract_raw_nodes(text: str) -> List[str]:
+    """
+    从 <think> 块中提取所有符合 { node_id: ... } 格式的原始文本块。
+    返回由字符串组成的列表，每个字符串是一个节点的原始文本。
+    """
+    # 1. 先提取 <think> 内容
+    think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL | re.IGNORECASE)
+    if not think_match:
+        return []
+    think_content = think_match.group(1)
+
+    # 2. 使用正则提取最外层的 {...} 结构
+    # 说明：这里使用非贪婪匹配提取包含 node_id 和 parents 的花括号块
+    node_pattern = re.compile(r'\{\s*node_id:.*?\s*parents:.*?\s*content:.*?\s*\}', re.DOTALL)
+    nodes = node_pattern.findall(think_content)
+    return nodes
+
 def gen_solution(humaneval_prompt: str) -> Tuple[str, str]:
     """
-    修改点：返回 (清洗后的代码, 原始的完整输出)
+    返回 (清洗后的代码, 原始的完整输出)
     """
     user_target_content = f"""Please complete the following Python function. 
 Apply the graph-structured reasoning format (nodes, edges, tags) learned from math problems to this coding problem.
@@ -283,26 +302,49 @@ def main():
 
     out_path = Path(OUTPUT_JSONL)
     log_path = Path(OUTPUT_THOUGHT_LOG)
+    nodes_path = Path(OUTPUT_NODES_JSONL)
 
     # 创建父目录（如果不存在）
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Generating solutions for {len(test_set)} tasks ...")
+    # ====== 1. 扫描已完成任务 (断点续跑) ======
+    finished_task_ids = set()
+    if out_path.exists():
+        print("Checking existing output for resuming...")
+        with out_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        data = json.loads(line)
+                        finished_task_ids.add(data["task_id"])
+                    except json.JSONDecodeError:
+                        pass
+        print(f"Found {len(finished_task_ids)} completed tasks. Resuming...")
     
-    # 格式依从性计数器
+    # 决定打开模式：'a' (追加) 或 'w' (新建)
+    open_mode = "a" if len(finished_task_ids) > 0 else "w"
+
+    print(f"Generating solutions for {len(test_set)} tasks ...")
     format_success_count = 0 
 
-    # 同时打开 JSONL (写代码) 和 MD (写思考过程)
-    with out_path.open("w", encoding="utf-8") as f_json, \
-         log_path.open("w", encoding="utf-8") as f_log:
+    # ====== 2. 打开所有文件 ======
+    with out_path.open(open_mode, encoding="utf-8") as f_json, \
+         log_path.open(open_mode, encoding="utf-8") as f_log, \
+         nodes_path.open(open_mode, encoding="utf-8") as f_nodes:
         
-        # 写入 Markdown 标题
-        f_log.write("# HumanEval+ Graph CoT Thought Process Log\n\n")
+        # 仅在全新开始时写入 Markdown Header
+        if open_mode == "w":
+            f_log.write("# HumanEval+ Graph CoT Thought Process Log\n\n")
 
         for i, problem in enumerate(test_set):
             task_id = problem["task_id"]
-            prompt = problem["prompt"]
+            
+            # 跳过已完成
+            if task_id in finished_task_ids:
+                continue
 
+            prompt = problem["prompt"]
             print(f"[{i+1}/{len(test_set)}] Generating for task {task_id} ...")
             try:
                 # 获取 solution 和 raw_text
@@ -321,20 +363,33 @@ def main():
                 "solution": solution,
             }
             f_json.write(json.dumps(sample, ensure_ascii=False) + "\n")
+            f_json.flush() # 强制保存
 
-            # 2. 写入 Markdown (给你看)
+            # 2. 写入 Markdown (日志)
             f_log.write(f"## Task: {task_id}\n")
             f_log.write(f"### Prompt\n```python\n{prompt}\n```\n\n")
             f_log.write(f"### Model Output (Think + Answer)\n")
-            # 使用引用块或代码块包裹，防止格式混乱
             f_log.write(f"```text\n{raw_text}\n```\n")
             f_log.write(f"\n---\n\n")
-            
-            # 立即刷新缓冲区，防止程序中断丢失日志
-            f_log.flush()
+            f_log.flush() # 强制保存
+
+            # 3. 写入 Nodes (图结构数据)
+            try:
+                extracted_nodes_list = extract_raw_nodes(raw_text)
+                node_sample = {
+                    "task_id": task_id,
+                    "node_count": len(extracted_nodes_list),
+                    "nodes": extracted_nodes_list, 
+                    "raw_think": re.search(r'<think>(.*?)</think>', raw_text, re.DOTALL | re.IGNORECASE).group(1) if '<think>' in raw_text else ""
+                }
+                f_nodes.write(json.dumps(node_sample, ensure_ascii=False) + "\n")
+                f_nodes.flush() # 强制保存
+            except Exception as e:
+                print(f"  !! Error saving nodes for {task_id}: {e}")
 
     print(f"Done! Samples saved to {out_path}")
     print(f"Thought process saved to {log_path}")
+    print(f"Graph nodes saved to {nodes_path}")
     print(f"Approximate format adherence: {format_success_count}/{len(test_set)}")
 
 

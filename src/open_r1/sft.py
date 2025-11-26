@@ -34,7 +34,7 @@ accelerate launch \
     --learning_rate 3.0e-5 \
     --num_train_epochs 5 \
     --max_seq_length 32768 \
-    --per_device_train_batch_size 8 \
+    --per_device_train_batch_size 4 \
     --gradient_checkpointing \
     --bf16 \
     --use_liger_kernel \
@@ -42,7 +42,8 @@ accelerate launch \
     --run_name Qwen3-8B-Math-SFT-Epoch5 \
     --logging_steps 1 \
     --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-data-SFT \
-    --eval_strategy epoch
+    --eval_strategy epoch \
+    --per_device_eval_batch_size 1
 """
 
 import logging
@@ -61,7 +62,7 @@ from open_r1.utils.wandb_logging import init_wandb_training
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
 os.environ["WANDB_API_KEY"] = '7b5e421309a7f263058faebac5cb0bc4e74608f2'
-os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-8b-SFT"
+os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-8b-SFT-all-data-last"
 logger = logging.getLogger(__name__)
 
 
@@ -95,8 +96,16 @@ def main(script_args, training_args, model_args):
         logger.info(f"Checkpoint detected, resuming training at {last_checkpoint=}.")
 
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    if local_rank == 0 and "wandb" in training_args.report_to:
-        init_wandb_training(training_args)
+    os.environ["WANDB_NAME"] = training_args.run_name + "-" + str(local_rank)
+    # if local_rank == 0:
+    #     # 主进程：如果有 wandb 就初始化
+    #     if "wandb" in training_args.report_to:
+    #         init_wandb_training(training_args)
+            
+    # else:
+    #     # 非主进程：强制移除 "wandb"，防止 Trainer 内部再次初始化
+    #     if "wandb" in training_args.report_to:
+    #         training_args.report_to = [b for b in training_args.report_to if b != "wandb"]
 
     ######################################
     # Load dataset, tokenizer, and model #

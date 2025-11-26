@@ -79,7 +79,7 @@ def _get_start_end_nodes(node_dict):
     return start_nodes, end_nodes
 
 
-def llm_judge_semantic_coherence(parent_text, child_text):
+def llm_judge_semantic_coherence(parent_texts, node_text, child_texts):
         """
         输入父节点和子节点文本，让大模型给出 0~1 的连贯性分数。
         """
@@ -93,21 +93,29 @@ def llm_judge_semantic_coherence(parent_text, child_text):
             "Authorization": f"Bearer {api_key}"
         }
 
+        parents_block = "\n".join([f"- {t}" for t in parent_texts]) if parent_texts else "None"
+        children_block = "\n".join([f"- {t}" for t in child_texts]) if child_texts else "None"
+
         prompt = f"""
             You are an analytical evaluator. Your task is to judge whether a child's reasoning step logically follows and builds upon its parent step without introducing contradictions.
 
-            ### Parent Node Content:
-            {parent_text}
+            ### Parent Nodes:
+            {parents_block}
 
-            ### Child Node Content:
-            {child_text}
+            ### Current Node:
+            {node_text}
+
+            ### Child Nodes:
+            {children_block}
 
             ### Evaluation Criteria:
-            1. The child should logically build upon the parent without introducing contradictions.
-            2. If the child repeats the parent’s idea with more detail, score should be high.
-            3. If the child introduces a valid, additional reasoning step that logically follows, score should be high.
-            4. If the child contradicts the parent (e.g., parent: 150%, child: 0.15), the score should be low.
-            5. If the child introduces information that violates the parent’s logic, the score should be low.
+            1. Parents -> Current: the current node should logically build upon its parents.
+            2. Current -> Children: children should follow logically from the current node.
+            3. The child should logically build upon the parent without introducing contradictions.
+            4. If the child repeats the parent’s idea with more detail, score should be high.
+            5. If the child introduces a valid, additional reasoning step that logically follows, score should be high.
+            6. If the child contradicts the parent (e.g., parent: 150%, child: 0.15), the score should be low.
+            7. If the child introduces information that violates the parent’s logic, the score should be low.
 
             ### Output Format:
             Respond ONLY with a number between 0 and 1 representing the semantic coherence score.
@@ -347,15 +355,22 @@ def reward_search(G, node_dict):
     """
     all_scores = []
 
-    for child_id, info in node_dict.items():
-        child_text = info["content"]
-        parents = info["parents"]
+    for nid, info in node_dict.items():
+        node_text = info["content"]
 
-        for p in parents:
-            parent_text = node_dict[p]["content"]
+        # 父节点文本
+        parent_texts = [node_dict[p]["content"] for p in info["parents"]]
 
-            score = llm_judge_semantic_coherence(parent_text, child_text)
-            all_scores.append(score)
+        # 子节点文本
+        if nid in G:
+            child_ids = list(G.successors(nid))
+            child_texts = [node_dict[c]["content"] for c in child_ids]
+        else:
+            child_texts = []
+
+        # 三者整体连贯性
+        score = llm_judge_semantic_coherence(parent_texts, node_text, child_texts)
+        all_scores.append(score)
 
     if not all_scores:
         return 0.0
