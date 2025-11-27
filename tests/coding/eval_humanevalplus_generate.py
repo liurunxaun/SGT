@@ -11,7 +11,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 HUMANEVALPLUS_DISK_DIR = "/ssd5/rxliu/datasets/humanevalplus"
 # 模型路径
-MODEL_PATH = "/ssd5/rxliu/models/output/Qwen3-8B-Olympiads-2000+GSM8K-7200-sft-data-SFT" 
+MODEL_PATH = "/ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT" 
 
 # 1. 提交给评测工具的文件 (JSONL)
 OUTPUT_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/samples_humanevalplus_structured_cot.jsonl"

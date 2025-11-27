@@ -26,22 +26,44 @@ unset HTTPS_PROXY
 unset all_proxy
 unset ALL_PROXY
 accelerate launch \
-    --config_file=recipes/accelerate_configs/zero3.yaml \
+    --config_file=recipes/accelerate_configs/zero2.yaml \
     src/open_r1/sft.py \
     --model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
     --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
     --dataset_config default \
     --learning_rate 3.0e-5 \
     --num_train_epochs 5 \
-    --max_seq_length 32768 \
-    --per_device_train_batch_size 4 \
+    --max_seq_length 8192 \
+    --per_device_train_batch_size 8 \
     --gradient_checkpointing \
     --bf16 \
     --use_liger_kernel \
     --report_to wandb \
     --run_name Qwen3-8B-Math-SFT-Epoch5 \
     --logging_steps 1 \
-    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-data-SFT \
+    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT \
+    --eval_strategy epoch \
+    --per_device_eval_batch_size 4
+
+    accelerate launch \
+    --config_file=recipes/accelerate_configs/zero2.yaml \
+    src/open_r1/sft.py \
+    --model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
+    --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
+    --dataset_config default \
+    --learning_rate 3.0e-5 \
+    --num_train_epochs 5 \
+    --max_seq_length 8192 \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 2 \
+    --gradient_checkpointing \
+    --bf16 \
+    --packing \
+    --use_liger_kernel \
+    --report_to wandb \
+    --run_name Qwen3-8B-Math-SFT-Packed \
+    --logging_steps 1 \
+    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT \
     --eval_strategy epoch \
     --per_device_eval_batch_size 1
 """
