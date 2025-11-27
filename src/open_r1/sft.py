@@ -48,7 +48,7 @@ accelerate launch \
     accelerate launch \
     --config_file=recipes/accelerate_configs/zero2.yaml \
     src/open_r1/sft.py \
-    --model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
+    --model_name_or_path /ssd5/rxliu/models/Qwen3-4B \
     --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
     --dataset_config default \
     --learning_rate 3.0e-5 \
@@ -61,9 +61,9 @@ accelerate launch \
     --packing \
     --use_liger_kernel \
     --report_to wandb \
-    --run_name Qwen3-8B-Math-SFT-Packed \
+    --run_name Qwen3-4B-Math-SFT-Packed \
     --logging_steps 1 \
-    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT \
+    --output_dir /ssd5/rxliu/models/output/Qwen3-4B-all-data-SFT \
     --eval_strategy epoch \
     --per_device_eval_batch_size 1
 """
@@ -84,7 +84,7 @@ from open_r1.utils.wandb_logging import init_wandb_training
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
 os.environ["WANDB_API_KEY"] = '7b5e421309a7f263058faebac5cb0bc4e74608f2'
-os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-8b-SFT-all-data-last"
+os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-4b-SFT-all-data-last"
 logger = logging.getLogger(__name__)
 
 

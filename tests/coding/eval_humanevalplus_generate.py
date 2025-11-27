@@ -2,10 +2,17 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, Any, Tuple, List
+import packaging.version
 
 from datasets import load_from_disk
 import torch
+import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# ====== 0. 版本检查 ======
+required_version = "4.51.0"
+if packaging.version.parse(transformers.__version__) < packaging.version.parse(required_version):
+    print(f"⚠️ Warning: transformers version {transformers.__version__} < {required_version}. 'enable_thinking' might not work.")
 
 # ====== 配置区 ======
 
@@ -13,19 +20,17 @@ HUMANEVALPLUS_DISK_DIR = "/ssd5/rxliu/datasets/humanevalplus"
 # 模型路径
 MODEL_PATH = "/ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT" 
 
-# 1. 提交给评测工具的文件 (JSONL)
-OUTPUT_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/samples_humanevalplus_structured_cot.jsonl"
-# 2. 给你自己看的思考过程日志 (Markdown)
-OUTPUT_THOUGHT_LOG = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/thought_process_log.md"
-# 3. 保存提取出的节点结构文件 (JSONL) <--- 新增
-OUTPUT_NODES_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/nodes_humanevalplus.jsonl"
+# 输出路径
+OUTPUT_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/samples_humanevalplus_structured_cot_11.27.jsonl"
+OUTPUT_THOUGHT_LOG = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/thought_process_log_last.md"
+OUTPUT_NODES_JSONL = "/data/home/the/rxliu/projects/open-r1-main/tests/coding/nodes_humanevalplus_11.27.jsonl"
 
-# 建议设置大一点，防止思考过程被截断
+# ====== Qwen3 官方推荐参数 ======
 MAX_NEW_TOKENS = 16384 
-TEMPERATURE = 0.0
-TOP_P = 1.0
+TEMPERATURE = 0.6  # <--- 修改：官方推荐 0.6，禁止 0.0
+TOP_P = 0.95       # <--- 修改：官方推荐 0.95
 
-# ====== System Prompt & 1-Shot Example ======
+# ====== System Prompt & 1-Shot Example (保持不变) ======
 SYSTEM_PROMPT = """You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>
 ...
 </think>
@@ -210,42 +215,34 @@ model.eval()
 
 def extract_answer(text: str) -> str:
     """提取 <answer> 内容，并清洗 Markdown 格式，只保留代码"""
+    # 增加防护：只取 </answer> 之前的内容
+    if "</answer>" in text:
+        text = text.split("</answer>")[0] + "</answer>"
+
     match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL | re.IGNORECASE)
     
     if match:
         content = match.group(1).strip()
     else:
-        # Fallback: 去掉 <think> 剩下的都算 answer
+        # Fallback
         content = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
         content = content.replace('<answer>', '').strip()
 
-    # 清洗 ```python 和 ```
     content = re.sub(r'^```python', '', content, flags=re.MULTILINE)
     content = re.sub(r'^```', '', content, flags=re.MULTILINE)
     
     return content.strip()
 
 def extract_raw_nodes(text: str) -> List[str]:
-    """
-    从 <think> 块中提取所有符合 { node_id: ... } 格式的原始文本块。
-    返回由字符串组成的列表，每个字符串是一个节点的原始文本。
-    """
-    # 1. 先提取 <think> 内容
     think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL | re.IGNORECASE)
     if not think_match:
         return []
     think_content = think_match.group(1)
-
-    # 2. 使用正则提取最外层的 {...} 结构
-    # 说明：这里使用非贪婪匹配提取包含 node_id 和 parents 的花括号块
     node_pattern = re.compile(r'\{\s*node_id:.*?\s*parents:.*?\s*content:.*?\s*\}', re.DOTALL)
     nodes = node_pattern.findall(think_content)
     return nodes
 
 def gen_solution(humaneval_prompt: str) -> Tuple[str, str]:
-    """
-    返回 (清洗后的代码, 原始的完整输出)
-    """
     user_target_content = f"""Please complete the following Python function. 
 Apply the graph-structured reasoning format (nodes, edges, tags) learned from math problems to this coding problem.
 Analyze the logic first in <think>, then output code in <answer>.
@@ -260,11 +257,17 @@ Problem:
         {"role": "user", "content": user_target_content}
     ]
     
-    text_input = tokenizer.apply_chat_template(
-        messages, 
-        tokenize=False, 
-        add_generation_prompt=True
-    )
+    # <--- 修改：开启 enable_thinking
+    try:
+        text_input = tokenizer.apply_chat_template(
+            messages, 
+            tokenize=False, 
+            add_generation_prompt=True,
+            enable_thinking=True # 显式开启
+        )
+    except TypeError:
+        print("Warning: enable_thinking param not supported, using default.")
+        text_input = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     
     inputs = tokenizer(text_input, return_tensors="pt").to(model.device)
     input_len = inputs.input_ids.shape[1]
@@ -273,10 +276,13 @@ Problem:
         outputs = model.generate(
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=(TEMPERATURE > 0),
-            temperature=TEMPERATURE,
-            top_p=TOP_P,
+            # <--- 修改：使用官方推荐参数
+            do_sample=True, 
+            temperature=TEMPERATURE, # 0.6
+            top_p=TOP_P,             # 0.95
+            
             eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.eos_token_id,
         )
 
     generated_ids = outputs[0][input_len:]
@@ -285,7 +291,6 @@ Problem:
     # 提取代码
     final_code_body = extract_answer(generated_text)
     
-    # 拼接最终代码（兼容模型可能没写 def 头的情况）
     if "def " in final_code_body:
         solution = final_code_body
     else:
@@ -304,10 +309,9 @@ def main():
     log_path = Path(OUTPUT_THOUGHT_LOG)
     nodes_path = Path(OUTPUT_NODES_JSONL)
 
-    # 创建父目录（如果不存在）
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ====== 1. 扫描已完成任务 (断点续跑) ======
+    # 断点续跑逻辑
     finished_task_ids = set()
     if out_path.exists():
         print("Checking existing output for resuming...")
@@ -322,58 +326,43 @@ def main():
                         pass
         print(f"Found {len(finished_task_ids)} completed tasks. Resuming...")
     
-    # 决定打开模式：'a' (追加) 或 'w' (新建)
     open_mode = "a" if len(finished_task_ids) > 0 else "w"
 
     print(f"Generating solutions for {len(test_set)} tasks ...")
     format_success_count = 0 
 
-    # ====== 2. 打开所有文件 ======
     with out_path.open(open_mode, encoding="utf-8") as f_json, \
          log_path.open(open_mode, encoding="utf-8") as f_log, \
          nodes_path.open(open_mode, encoding="utf-8") as f_nodes:
         
-        # 仅在全新开始时写入 Markdown Header
         if open_mode == "w":
             f_log.write("# HumanEval+ Graph CoT Thought Process Log\n\n")
 
         for i, problem in enumerate(test_set):
             task_id = problem["task_id"]
-            
-            # 跳过已完成
             if task_id in finished_task_ids:
                 continue
 
             prompt = problem["prompt"]
             print(f"[{i+1}/{len(test_set)}] Generating for task {task_id} ...")
             try:
-                # 获取 solution 和 raw_text
                 solution, raw_text = gen_solution(prompt)
-                
                 if solution.strip():
                     format_success_count += 1
             except Exception as e:
-                print(f"  !! Error when generating for {task_id}: {e}")
+                print(f"  !! Error: {e}")
                 solution = ""
                 raw_text = f"Error: {e}"
 
-            # 1. 写入 JSONL (EvalPlus 用)
-            sample: Dict[str, Any] = {
-                "task_id": task_id,
-                "solution": solution,
-            }
+            sample = {"task_id": task_id, "solution": solution}
             f_json.write(json.dumps(sample, ensure_ascii=False) + "\n")
-            f_json.flush() # 强制保存
+            f_json.flush()
 
-            # 2. 写入 Markdown (日志)
             f_log.write(f"## Task: {task_id}\n")
             f_log.write(f"### Prompt\n```python\n{prompt}\n```\n\n")
-            f_log.write(f"### Model Output (Think + Answer)\n")
-            f_log.write(f"```text\n{raw_text}\n```\n")
-            f_log.write(f"\n---\n\n")
-            f_log.flush() # 强制保存
+            f_log.write(f"### Model Output\n```text\n{raw_text}\n```\n\n---\n\n")
+            f_log.flush()
 
-            # 3. 写入 Nodes (图结构数据)
             try:
                 extracted_nodes_list = extract_raw_nodes(raw_text)
                 node_sample = {
@@ -383,15 +372,11 @@ def main():
                     "raw_think": re.search(r'<think>(.*?)</think>', raw_text, re.DOTALL | re.IGNORECASE).group(1) if '<think>' in raw_text else ""
                 }
                 f_nodes.write(json.dumps(node_sample, ensure_ascii=False) + "\n")
-                f_nodes.flush() # 强制保存
+                f_nodes.flush()
             except Exception as e:
-                print(f"  !! Error saving nodes for {task_id}: {e}")
+                pass
 
     print(f"Done! Samples saved to {out_path}")
-    print(f"Thought process saved to {log_path}")
-    print(f"Graph nodes saved to {nodes_path}")
-    print(f"Approximate format adherence: {format_success_count}/{len(test_set)}")
-
 
 if __name__ == "__main__":
     main()

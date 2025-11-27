@@ -3,10 +3,11 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 from tqdm import tqdm  # 进度条库，没有请 pip install tqdm
-from llm_judge import llm_judge_via_api
+from utils.llm_judge import llm_judge_via_api
+
 # ================= 配置部分 =================
-INPUT_FILE = "/data/home/the/rxliu/projects/open-r1-main/tests/results/Qwen3-8B-all-data-sft-last-SFT_main_20251126.csv"   # 输入的CSV文件路径
-OUTPUT_FILE = "judged_result.xlsx" # 输出文件名
+INPUT_FILE = "/data/home/the/rxliu/projects/open-r1-main/tests/results/Qwen3-8B_main_20251127.csv"   # 输入的CSV文件路径
+OUTPUT_FILE = "/data/home/the/rxliu/projects/open-r1-main/tests/results/Qwen3-8B_main_20251127_judged_result.xlsx" # 输出文件名
 
 # 阿里 DashScope 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
