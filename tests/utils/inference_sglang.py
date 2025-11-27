@@ -43,14 +43,16 @@ async def process_single_row(
     loop: asyncio.AbstractEventLoop, 
     system_prompt, 
     query_field,
+    answer_field,
     temperature, 
     max_tokens
 ) -> Dict[str, Any]:
     """处理单行数据：生成 -> 解析 -> 评测"""
     
     query = row[query_field]
+    ground_truth = row[answer_field]
 
-    # 1. 构建 Prompt (保留原逻辑)
+    # 1. 构建 Prompt
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query}
@@ -60,15 +62,30 @@ async def process_single_row(
     async with semaphore:
         raw_output_text = await generate_sglang(client, messages, temperature, max_tokens)
 
-    # 3. 返回结果
+    # 3. 解析结果
+        # SGLang 返回的是 text，直接用字符串分割，逻辑等同于原代码找 token id
+        # 查找 </think>
+    split_token = "</think>"
+    if split_token in raw_output_text:
+        parts = raw_output_text.rsplit(split_token, 1)
+        thinking_content = parts[0].strip()
+        predict_answer = parts[1].strip()
+    else:
+        thinking_content = ""
+        predict_answer = raw_output_text.strip()
+
+    # 4. 返回结果
     return {
         "id": index,
         "query": query,
-        "response": raw_output_text
+        "response": raw_output_text,
+        "predicted_answer": predict_answer,
+        "ground_truth": ground_truth,
+        "thinking_content": thinking_content,
     }
 
 
-async def run_inference(dataset_path, system_prompt, query_field, output_path, model, temperature, max_tokens,):
+async def run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens,):
     print("========begin inference========")
     print()
 
@@ -105,7 +122,7 @@ async def run_inference(dataset_path, system_prompt, query_field, output_path, m
     tasks = []
     # 创建所有任务
     for i, row in df.iterrows():
-        task = process_single_row(i, row, client, semaphore, loop, system_prompt, query_field, temperature, max_tokens)
+        task = process_single_row(i, row, client, semaphore, loop, system_prompt, query_field, answer_field, temperature, max_tokens)
         tasks.append(task)
 
     results = []
@@ -129,6 +146,6 @@ async def run_inference(dataset_path, system_prompt, query_field, output_path, m
 
 
 # 程序主入口
-def inference_sglang(dataset_path, system_prompt, query_field, output_path, model, temperature, max_tokens):
+def inference_sglang(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens):
 
-    asyncio.run(run_inference(dataset_path, system_prompt, query_field, output_path, model, temperature, max_tokens))
+    asyncio.run(run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens))
