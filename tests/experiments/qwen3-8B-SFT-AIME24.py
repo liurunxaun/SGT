@@ -13,21 +13,21 @@ from inference_sglang import inference_sglang
 
 # ================= 参数配置 =================
 # sglang推理结果
-inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-GSM8K-20251127-1730.xlsx"
+inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-SFT-AIME24-20251127-2311.xlsx"
 
 # sglang 推理参数
-dataset_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
+dataset_path = "/ssd5/rxliu/datasets/AIME24/data/train-00000-of-00001.parquet"
 system_prompt = ""
-query_field = "question"
-model = "qwen3-8B"
+query_field = "problem"
+model = "qwen3-8B-SFT"
 temperature = 0.6
-max_tokens = 32768
+max_tokens = 38912
 
 # 测试参数
 answer_field = "answer"
 
 # 测试结果   
-result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-GSM8K-20251127-1730.xlsx" 
+result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-SFT-AIME24-20251127-2311.xlsx" 
 
 # llm judge 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
@@ -39,18 +39,7 @@ client = OpenAI(api_key=API_KEY, base_url=API_URL)
 # ================= 数据处理函数 =================
 
 def process_ground_truth(text):
-    """
-    处理 Ground Truth：提取 #### 之后的内容并去除空格
-    """
-    if not isinstance(text, str):
-        return str(text)
-    
-    if "####" in text:
-        # 分割并取最后一部分，去除前后空格
-        return text.split("####")[-1].strip()
-    else:
-        # 如果没有 ####，则返回去除空格的原文本
-        return text.strip()
+        return text
 
 
 def process_row(row):
@@ -79,7 +68,7 @@ def process_row(row):
 def main():
  
     # sglang推理
-    inference_sglang(dataset_path, system_prompt, query_field, answer_field, inference_output_path, model, temperature, max_tokens)
+    # inference_sglang(dataset_path, system_prompt, query_field, answer_field, inference_output_path, model, temperature, max_tokens)
 
     # 读取推理结果
     if not os.path.exists(inference_output_path):

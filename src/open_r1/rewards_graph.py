@@ -349,11 +349,14 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
 
 def reward_search(G, node_dict):
     """
-    1. 搜索推理图
-    2. 对每个节点的内容和其父节点,子节点的内容进行语义连贯性评价。
-    3. 返回 0~1 分
+    综合两部分：
+    1. LLM 语义连贯性评分（每个节点：父 → 当前 → 子）
+    2. 节点对终点标签节点（最后一个标签的节点集合）的可达性评分
+
+    最终 reward = ( semantic_avg + reachability_avg ) / 2
     """
-    all_scores = []
+    # Part 1: 语义连贯性评分
+    semantic_scores = []
 
     for nid, info in node_dict.items():
         node_text = info["content"]
@@ -362,20 +365,51 @@ def reward_search(G, node_dict):
         parent_texts = [node_dict[p]["content"] for p in info["parents"]]
 
         # 子节点文本
-        if nid in G:
-            child_ids = list(G.successors(nid))
-            child_texts = [node_dict[c]["content"] for c in child_ids]
-        else:
-            child_texts = []
+        child_ids = list(G.successors(nid)) if nid in G else []
+        child_texts = [node_dict[c]["content"] for c in child_ids]
 
-        # 三者整体连贯性
+        # LLM 语义连贯性
         score = llm_judge_semantic_coherence(parent_texts, node_text, child_texts)
-        all_scores.append(score)
+        semantic_scores.append(score)
 
-    if not all_scores:
-        return 0.0
+    semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
 
-    return sum(all_scores) / len(all_scores)
+    # Part 2: 可达性评分：节点 → 最后一个标签的任意节点
+    # 找最后一个标签
+    labels_order = []
+    for nid in sorted(node_dict.keys()):
+        lb = node_dict[nid]["label"]
+        if lb not in labels_order:
+            labels_order.append(lb)
+
+    if len(labels_order) < 1:
+        return semantic_avg  # fallback
+
+    final_label = labels_order[-1]
+
+    # 最终目标节点集合
+    end_nodes = [nid for nid, info in node_dict.items() if info["label"] == final_label]
+
+    reach_scores = []
+
+    for nid in node_dict.keys():
+        reachable = False
+        for e in end_nodes:
+            try:
+                if nx.has_path(G, nid, e):
+                    reachable = True
+                    break
+            except:
+                pass
+        
+        reach_scores.append(1.0 if reachable else 0.0)
+
+    reachability_avg = sum(reach_scores) / len(reach_scores) if reach_scores else 0.0
+
+    # Final reward = 综合两部分平均
+    final_reward = (semantic_avg + reachability_avg) / 2
+    return final_reward
+
 
 
 # ============================================================

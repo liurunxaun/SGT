@@ -140,7 +140,7 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     df_results = pd.DataFrame(results)
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df_results.to_csv(output_path, index=False, encoding="utf-8")
+    df_results.to_excel(output_path, index=False)
 
     print("\n========inference finished========")
 

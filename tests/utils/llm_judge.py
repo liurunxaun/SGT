@@ -102,8 +102,8 @@ def llm_judge_via_api(answer, ground_truth, api_url, api_key, judge_model_name):
         resp_json = resp.json()
         verdict = resp_json["choices"][0]["message"]["content"].strip().lower()
     
-    print()
-    print(f"verdict: {verdict}")
-    print()
+    # print()
+    # print(f"verdict: {verdict}")
+    # print()
 
     return verdict == "right"
