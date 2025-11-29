@@ -142,7 +142,7 @@ def llm_judge_coherence(parent_texts, child_text):
 
 def count_tokens(text):
     
-    return len(text)
+    return len(text.split())
 
 
 # ============================================================
@@ -267,42 +267,76 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
     if not start_nodes or not end_nodes:
         return 0.0
 
-    # Step 2: 找 start → end 的最长路径 P
-    best_path = None
-    best_length = -1    # ⭐ 初始为 -1 ，这样任何路径长度都比它大
+    # Step 1：SCC 分解（强连通成分），将有环节点压成 DAG
+    scc_list = list(nx.strongly_connected_components(G))  # 每个 SCC 是一个节点集合
+    scc_id = {}    # 每个节点对应其 SCC 编号
+    scc_graph = nx.DiGraph()
 
-    for s in start_nodes:
-        for e in end_nodes:
-            try:
-                # 遍历所有 simple path（自动避免环）
-                for path in nx.all_simple_paths(G, s, e):
-                    if len(path) > best_length:
-                        best_path = path
-                        best_length = len(path)
-            except nx.NetworkXNoPath:
-                continue
+    for i, comp in enumerate(scc_list):
+        scc_graph.add_node(i)
+        for node in comp:
+            scc_id[node] = i
 
+    for u, v in G.edges():
+        if scc_id[u] != scc_id[v]:
+            scc_graph.add_edge(scc_id[u], scc_id[v])  # Only inter-SCC edges
 
-    # 如果完全找不到路径
-    if best_path is None:
+    # Step 2：在 SCC DAG 上求 start → end 的最长路径
+    start_scc = {scc_id[s] for s in start_nodes}
+    end_scc = {scc_id[e] for e in end_nodes}
+
+    topo = list(nx.topological_sort(scc_graph))
+
+    # DP：每个 SCC 的最长路径长度 + 路径
+    dp_len = {i: -1 for i in topo}
+    dp_path = {i: [] for i in topo}
+
+    # 初始化所有 start_scc
+    for s in start_scc:
+        dp_len[s] = 0
+        dp_path[s] = [s]
+
+    # DAG DP
+    for u in topo:
+        if dp_len[u] < 0:
+            continue
+        for v in scc_graph.successors(u):
+            if dp_len[u] + 1 > dp_len[v]:
+                dp_len[v] = dp_len[u] + 1
+                dp_path[v] = dp_path[u] + [v]
+
+    # 找到最优终点
+    best_scc_path = None
+    best_length = -1
+    for e in end_scc:
+        if dp_len[e] > best_length:
+            best_length = dp_len[e]
+            best_scc_path = dp_path[e]
+
+    if best_scc_path is None:
         return 0.0
 
-    P = best_path
+    # 将 SCC 路径展开成“主路径节点序列”P
+    main_path = []
+    for comp_id in best_scc_path:
+        # 取这个 SCC 中任意一个节点（你也可以取多个）
+        comp_nodes = list(scc_list[comp_id])
+        main_path.append(comp_nodes[0])
+
+    P = main_path
     P_set = set(P)
 
-    # Step 3: 找合法分支：从 P 分出去，又回到 P
+    # Step 3：找所有从主路径分出去又能回来的“合法分支”
     branch_nodes = set()
 
     for u in P:
-        # 所有孩子
         for v in G.successors(u):
             if v in P_set:
-                continue  # 仍在主路径
+                continue
 
-            # BFS 看是否能从 v 回到 P
+            # BFS：从 v 出发，看看是否能回到主路径
             visited = set()
             queue = [v]
-
             can_return = False
 
             while queue:
@@ -322,22 +356,15 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
             if can_return:
                 branch_nodes.update(visited)
 
-    # Step 4: 有效子图节点集合 E
+    # Step 4：计算有效信息 token 占比
     effective_nodes = P_set | branch_nodes
 
-    # Step 5: 基于 think_content 计算 token 比例
-    
-    # 全部 token
     total_tokens = count_tokens(think_content)
-    # 有效 token：将 effective_nodes 的内容拼接
-    effective_texts = []
-    for nid in effective_nodes:
-        effective_texts.append(node_dict[nid]["content"])
-
-    effective_tokens = count_tokens("\n".join(effective_texts))
-
     if total_tokens == 0:
         return 0.0
+
+    effective_texts = "\n".join(node_dict[n]["content"] for n in effective_nodes)
+    effective_tokens = count_tokens(effective_texts)
 
     return effective_tokens / total_tokens
 
