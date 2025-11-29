@@ -1,3 +1,9 @@
+import time
+
+LLM_TIME = 0.0
+LLM_CALLS = 0
+
+
 import re
 import networkx as nx
 import requests
@@ -77,67 +83,68 @@ def _get_start_end_nodes(node_dict):
     end_nodes   = [nid for nid, info in node_dict.items() if info["label"] == end_label]
 
     return start_nodes, end_nodes
-
+    
 
 def llm_judge_coherence(parent_texts, child_text):
-        """
-        输入父节点、当前节点、子节点的推理内容，让大模型给出 0~1 的连贯性分数。
-        判断当前节点和子节点的连贯性时，当前节点是parent，子节点是child。
-        """
 
-        api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-        api_key = "sk-8d445207b1ab47efb83069ccc1b845b6"
-        model = "qwen3-next-80b-a3b-instruct"
+    """
+    输入父节点、当前节点、子节点的推理内容，让大模型给出 0~1 的连贯性分数。
+    判断当前节点和子节点的连贯性时，当前节点是parent，子节点是child。
+    """
 
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
+    api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    api_key = "sk-8d445207b1ab47efb83069ccc1b845b6"
+    model = "qwen3-next-80b-a3b-instruct"
 
-        prompt = f"""
-            You are an analytical evaluator. Your task is to judge whether a child's reasoning step logically follows and builds upon its parent step without introducing contradictions.
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
 
-            ### Parent:
-            {parent_texts}
+    prompt = f"""
+        You are an analytical evaluator. Your task is to judge whether a child's reasoning step logically follows and builds upon its parent step without introducing contradictions.
 
-            ### Child Nodes:
-            {child_text}
+        ### Parent:
+        {parent_texts}
 
-            ### Evaluation Criteria:
-            1. Parents -> Current: the current node should logically build upon its parents.
-            2. Current -> Children: children should follow logically from the current node.
-            3. The child should logically build upon the parent without introducing contradictions.
-            4. If the child repeats the parent’s idea with more detail, score should be high.
-            5. If the child introduces a valid, additional reasoning step that logically follows, score should be high.
-            6. If the child contradicts the parent (e.g., parent: 150%, child: 0.15), the score should be low.
-            7. If the child introduces information that violates the parent’s logic, the score should be low.
+        ### Child Nodes:
+        {child_text}
 
-            ### Output Format:
-            Respond ONLY with a number between 0 and 1 representing the semantic coherence score.
-            No explanation. No text around it.
-        """
+        ### Evaluation Criteria:
+        1. Parents -> Current: the current node should logically build upon its parents.
+        2. Current -> Children: children should follow logically from the current node.
+        3. The child should logically build upon the parent without introducing contradictions.
+        4. If the child repeats the parent’s idea with more detail, score should be high.
+        5. If the child introduces a valid, additional reasoning step that logically follows, score should be high.
+        6. If the child contradicts the parent (e.g., parent: 150%, child: 0.15), the score should be low.
+        7. If the child introduces information that violates the parent’s logic, the score should be low.
 
-        data = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.0,
-        }
+        ### Output Format:
+        Respond ONLY with a number between 0 and 1 representing the semantic coherence score.
+        No explanation. No text around it.
+    """
 
-        try:
-            response = requests.post(api_url, headers=headers, data=json.dumps(data))
-            result = response.json()
+    data = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.0,
+    }
 
-            score_str = result["choices"][0]["message"]["content"].strip()
-            score = float(score_str)
+    try:
+        response = requests.post(api_url, headers=headers, data=json.dumps(data))
+        result = response.json()
 
-            score = max(0.0, min(1.0, score))
-            return score
+        score_str = result["choices"][0]["message"]["content"].strip()
+        score = float(score_str)
 
-        except Exception as e:
-            print("LLM semantic check error:", e)
-            return 0.0
+        score = max(0.0, min(1.0, score))
+        return score
+
+    except Exception as e:
+        print("LLM semantic check error:", e)
+        return 0.0
         
 
 def count_tokens(text):
@@ -375,43 +382,45 @@ def reward_search(G, node_dict):
     1. LLM 语义冲突评分（每个节点：父 → 当前 → 子）
     2. 节点对终点的可达性评分
     """
-    # Part 1: 节点语义冲突评分
-    semantic_scores = []
+    # # Part 1: 节点语义冲突评分
+    # semantic_scores = []
 
-    for nid, info in node_dict.items():
+    # for nid, info in node_dict.items():
 
-        node_text = info["content"]
-        score = 0.0
-        total = 0
+    #     node_text = info["content"]
+    #     score = 0.0
+    #     total = 0
 
-        # 判断当前节点与父节点文本的连贯性
-        parent_texts = [node_dict[p]["content"] for p in info["parents"]]
-        if len(parent_texts) == 0:
-            score += 1.0  # 无父节点，视为完全连贯
-            total += 1
-        else:
-            for parent_text in parent_texts:
-                score += llm_judge_coherence(parent_text, node_text)
-                total += 1
+    #     # 判断当前节点与父节点文本的连贯性
+    #     parent_texts = [node_dict[p]["content"] for p in info["parents"]]
+    #     if len(parent_texts) == 0:
+    #         score += 1.0  # 无父节点，视为完全连贯
+    #         total += 1
+    #     else:
+    #         for parent_text in parent_texts:
+    #             score += llm_judge_coherence(parent_text, node_text)
+    #             total += 1
 
-        # 判断当前节点与子节点文本的连贯性
-        child_ids = list(G.successors(nid)) if nid in G else []
-        child_texts = [node_dict[c]["content"] for c in child_ids]
-        if len(child_texts) == 0:
-            score += 1.0  # 无子节点，视为完全连贯
-            total += 1
-        else:
-            for child_text in child_texts:
-                score += llm_judge_coherence(node_text, child_text)
-                total += 1
+    #     # 判断当前节点与子节点文本的连贯性
+    #     child_ids = list(G.successors(nid)) if nid in G else []
+    #     child_texts = [node_dict[c]["content"] for c in child_ids]
+    #     if len(child_texts) == 0:
+    #         score += 1.0  # 无子节点，视为完全连贯
+    #         total += 1
+    #     else:
+    #         for child_text in child_texts:
+    #             score += llm_judge_coherence(node_text, child_text)
+    #             total += 1
         
-        # 计算当前节点的平均分
-        if total > 0:
-            score /= total
+    #     # 计算当前节点的平均分
+    #     if total > 0:
+    #         score /= total
 
-        semantic_scores.append(score)
+    #     semantic_scores.append(score)
 
-    semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
+    # semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
+
+    semantic_avg = 1
 
    # Part 2: 节点对最终答案贡献情况评分：可达性评价：节点 → 最后一个节点
 

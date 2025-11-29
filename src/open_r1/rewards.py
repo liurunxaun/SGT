@@ -40,18 +40,24 @@ from rewards_graph import construct_graph_and_score
 from tests.utils.llm_judge import llm_judge_via_api
 
 def graph_reward(script_args, completions, **kwargs) -> list[Optional[float]]:
-
+    
+    # print("caculating graph reward")
+    
     rewards = []
 
     contents = [completion[0]["content"] for completion in completions]
     for content in contents:
-        try:
-            reward = construct_graph_and_score(content, script_args)
-            rewards.append(reward)
-        except Exception as e:
-            print(f"Error constructing graph and scoring reward: {e}")
-            rewards.append(0)  # or some default value in case of error
-
+        if content is None:
+            rewards.append(0.0)
+            print("graph reward: content is none")
+            continue
+        else:
+            try:
+                reward = float(construct_graph_and_score(content, script_args))
+                rewards.append(reward)
+            except Exception as e:
+                print(f"Error constructing graph and scoring reward: {e}")
+                rewards.append(0.0)  # or some default value in case of error
     return rewards
 
 
@@ -122,17 +128,21 @@ def accuracy_reward(completions: list[list[dict[str, str]]], solution: list[str]
             if match:
                 answer_parsed = match.group(1).strip()
             else:
+                reward = 0.0
+                rewards.append(reward)
                 print("Cannot answer found in the output.")
+                continue
             # Compute binary rewards if verifiable, `None` otherwise to skip this example
             try:
                 reward = float(llm_judge_via_api(answer_parsed, gold_parsed, api_url, api_key, judge_model_name))
             except Exception as e:
                 print(f"verify failed: {e}, answer: {answer_parsed}, gold: {gold_parsed}")
-                reward = None
+                reward = 0.0
         else:
             # If the gold solution is not parseable, we assign `None` to skip this example
-            reward = None
+            reward = 0.0
             print("Failed to parse gold solution: ", sol)
+        
         rewards.append(reward)
 
     return rewards
