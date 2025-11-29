@@ -1,0 +1,1 @@
+print(">>> vLLM URL:", self.vllm_client.base_url)

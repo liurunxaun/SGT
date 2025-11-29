@@ -79,9 +79,10 @@ def _get_start_end_nodes(node_dict):
     return start_nodes, end_nodes
 
 
-def llm_judge_semantic_coherence(parent_texts, node_text, child_texts):
+def llm_judge_coherence(parent_texts, child_text):
         """
-        输入父节点和子节点文本，让大模型给出 0~1 的连贯性分数。
+        输入父节点、当前节点、子节点的推理内容，让大模型给出 0~1 的连贯性分数。
+        判断当前节点和子节点的连贯性时，当前节点是parent，子节点是child。
         """
 
         api_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
@@ -93,20 +94,14 @@ def llm_judge_semantic_coherence(parent_texts, node_text, child_texts):
             "Authorization": f"Bearer {api_key}"
         }
 
-        parents_block = "\n".join([f"- {t}" for t in parent_texts]) if parent_texts else "None"
-        children_block = "\n".join([f"- {t}" for t in child_texts]) if child_texts else "None"
-
         prompt = f"""
             You are an analytical evaluator. Your task is to judge whether a child's reasoning step logically follows and builds upon its parent step without introducing contradictions.
 
-            ### Parent Nodes:
-            {parents_block}
-
-            ### Current Node:
-            {node_text}
+            ### Parent:
+            {parent_texts}
 
             ### Child Nodes:
-            {children_block}
+            {child_text}
 
             ### Evaluation Criteria:
             1. Parents -> Current: the current node should logically build upon its parents.
@@ -350,64 +345,70 @@ def reward_effective_subgraph_information_proportion(think_content, G, node_dict
 def reward_search(G, node_dict):
     """
     综合两部分：
-    1. LLM 语义连贯性评分（每个节点：父 → 当前 → 子）
-    2. 节点对终点标签节点（最后一个标签的节点集合）的可达性评分
-
-    最终 reward = ( semantic_avg + reachability_avg ) / 2
+    1. LLM 语义冲突评分（每个节点：父 → 当前 → 子）
+    2. 节点对终点的可达性评分
     """
-    # Part 1: 语义连贯性评分
+    # Part 1: 节点语义冲突评分
     semantic_scores = []
 
     for nid, info in node_dict.items():
+
         node_text = info["content"]
+        score = 0.0
+        total = 0
 
-        # 父节点文本
+        # 判断当前节点与父节点文本的连贯性
         parent_texts = [node_dict[p]["content"] for p in info["parents"]]
+        if len(parent_texts) == 0:
+            score += 1.0  # 无父节点，视为完全连贯
+            total += 1
+        else:
+            for parent_text in parent_texts:
+                score += llm_judge_coherence(parent_text, node_text)
+                total += 1
 
-        # 子节点文本
+        # 判断当前节点与子节点文本的连贯性
         child_ids = list(G.successors(nid)) if nid in G else []
         child_texts = [node_dict[c]["content"] for c in child_ids]
+        if len(child_texts) == 0:
+            score += 1.0  # 无子节点，视为完全连贯
+            total += 1
+        else:
+            for child_text in child_texts:
+                score += llm_judge_coherence(node_text, child_text)
+                total += 1
+        
+        # 计算当前节点的平均分
+        if total > 0:
+            score /= total
 
-        # LLM 语义连贯性
-        score = llm_judge_semantic_coherence(parent_texts, node_text, child_texts)
         semantic_scores.append(score)
 
     semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
 
-    # Part 2: 可达性评分：节点 → 最后一个标签的任意节点
-    # 找最后一个标签
-    labels_order = []
-    for nid in sorted(node_dict.keys()):
-        lb = node_dict[nid]["label"]
-        if lb not in labels_order:
-            labels_order.append(lb)
+   # Part 2: 节点对最终答案贡献情况评分：可达性评价：节点 → 最后一个节点
 
-    if len(labels_order) < 1:
-        return semantic_avg  # fallback
+    # 直接取最后一个节点（编号最大）
+    end_nodes = [max(node_dict.keys())]
 
-    final_label = labels_order[-1]
+    # 反向构图，从最终节点出发 BFS
+    reverse_G = G.reverse()
+    target_reachable = set()
 
-    # 最终目标节点集合
-    end_nodes = [nid for nid, info in node_dict.items() if info["label"] == final_label]
+    queue = end_nodes.copy()
+    while queue:
+        x = queue.pop(0)
+        if x in target_reachable:
+            continue
+        target_reachable.add(x)
+        for parent in reverse_G.successors(x):
+            queue.append(parent)
 
-    reach_scores = []
+    answer_contribution_avg = len(target_reachable) / len(node_dict)
 
-    for nid in node_dict.keys():
-        reachable = False
-        for e in end_nodes:
-            try:
-                if nx.has_path(G, nid, e):
-                    reachable = True
-                    break
-            except:
-                pass
-        
-        reach_scores.append(1.0 if reachable else 0.0)
-
-    reachability_avg = sum(reach_scores) / len(reach_scores) if reach_scores else 0.0
 
     # Final reward = 综合两部分平均
-    final_reward = (semantic_avg + reachability_avg) / 2
+    final_reward = (semantic_avg + answer_contribution_avg) / 2
     return final_reward
 
 
@@ -422,6 +423,7 @@ def construct_graph_and_score(content, script_args):
     动态计算图奖励，并对权重做归一化处理。
     """
     # step 0: 提取think内容
+    # print(f"content:{content}")
     match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
     if match:
         think_content = match.group(1).strip()

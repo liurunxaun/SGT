@@ -40,6 +40,7 @@ from rewards_graph import construct_graph_and_score
 from tests.utils.llm_judge import llm_judge_via_api
 
 def graph_reward(script_args, completions, **kwargs) -> list[Optional[float]]:
+    print("caculating graph reward...")
     rewards = []
 
     contents = [completion[0]["content"] for completion in completions]
