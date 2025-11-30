@@ -2,7 +2,6 @@ import re
 import networkx as nx
 import requests
 import json
-import wandb
 
 # ============================================================
 #                  构建图
@@ -377,45 +376,43 @@ def reward_search(G, node_dict):
     1. LLM 语义冲突评分（每个节点：父 → 当前 → 子）
     2. 节点对终点的可达性评分
     """
-    # # Part 1: 节点语义冲突评分
-    # semantic_scores = []
+    # Part 1: 节点语义冲突评分
+    semantic_scores = []
 
-    # for nid, info in node_dict.items():
+    for nid, info in node_dict.items():
 
-    #     node_text = info["content"]
-    #     score = 0.0
-    #     total = 0
+        node_text = info["content"]
+        score = 0.0
+        total = 0
 
-    #     # 判断当前节点与父节点文本的连贯性
-    #     parent_texts = [node_dict[p]["content"] for p in info["parents"]]
-    #     if len(parent_texts) == 0:
-    #         score += 1.0  # 无父节点，视为完全连贯
-    #         total += 1
-    #     else:
-    #         for parent_text in parent_texts:
-    #             score += llm_judge_coherence(parent_text, node_text)
-    #             total += 1
+        # 判断当前节点与父节点文本的连贯性
+        parent_texts = [node_dict[p]["content"] for p in info["parents"]]
+        if len(parent_texts) == 0:
+            score += 1.0  # 无父节点，视为完全连贯
+            total += 1
+        else:
+            for parent_text in parent_texts:
+                score += llm_judge_coherence(parent_text, node_text)
+                total += 1
 
-    #     # 判断当前节点与子节点文本的连贯性
-    #     child_ids = list(G.successors(nid)) if nid in G else []
-    #     child_texts = [node_dict[c]["content"] for c in child_ids]
-    #     if len(child_texts) == 0:
-    #         score += 1.0  # 无子节点，视为完全连贯
-    #         total += 1
-    #     else:
-    #         for child_text in child_texts:
-    #             score += llm_judge_coherence(node_text, child_text)
-    #             total += 1
+        # 判断当前节点与子节点文本的连贯性
+        child_ids = list(G.successors(nid)) if nid in G else []
+        child_texts = [node_dict[c]["content"] for c in child_ids]
+        if len(child_texts) == 0:
+            score += 1.0  # 无子节点，视为完全连贯
+            total += 1
+        else:
+            for child_text in child_texts:
+                score += llm_judge_coherence(node_text, child_text)
+                total += 1
         
-    #     # 计算当前节点的平均分
-    #     if total > 0:
-    #         score /= total
+        # 计算当前节点的平均分
+        if total > 0:
+            score /= total
 
-    #     semantic_scores.append(score)
+        semantic_scores.append(score)
 
-    # semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
-
-    semantic_avg = 1
+    semantic_avg = sum(semantic_scores) / len(semantic_scores) if semantic_scores else 0.0
 
    # Part 2: 节点对最终答案贡献情况评分：可达性评价：节点 → 最后一个节点
 
@@ -454,38 +451,24 @@ def construct_graph_and_score(content, script_args):
     动态计算图奖励，并对权重做归一化处理。
     """
     # step 0: 提取think内容
+    # print(f"content:{content}")
     match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
     if match:
         think_content = match.group(1).strip()
     else:
-        # [修改点]：如果找不到 <think> 标签，说明格式严重错误
-        # 直接返回 0.0，避免把 None 传给 construct_graph 导致报错
-        # print("Graph Reward: No <think> tag found.") # 可选日志
-        return 0.0
-
-    # 如果提取出的内容为空字符串，也直接返回 0
-    if not think_content:
-        return 0.0
+        think_content = None
 
     # step 1: 构图
-    try:
-        G, node_dict = construct_graph(think_content)
-    except Exception as e:
-        print(f"Graph construction error: {e}")
-        return 0.0
-        
-    # 如果图是空的（没有节点），下面的计算(如 search)可能会除以0或报错，直接返回 0
-    if not node_dict:
-        return 0.0
+    G, node_dict = construct_graph(think_content)
 
-    # step 2: reward 函数注册表
+    # step 2: reward 函数注册表，新增函数需要在这里注册
     reward_func_registry = {
         "reachability": lambda: reward_reachability(G, node_dict),
         "connectivity": lambda: reward_connectivity(G),
         "label_structure": lambda: reward_label_structure(node_dict),
         "effective_subgraph_information_proportion": lambda: reward_effective_subgraph_information_proportion(think_content, G, node_dict),
         "search": lambda: reward_search(G, node_dict),
-    }
+        }
 
     funcs = script_args.graph_reward_funcs
     weights = script_args.graph_reward_weights
@@ -497,39 +480,23 @@ def construct_graph_and_score(content, script_args):
     weight_sum = sum(weights)
 
     if weight_sum == 0:
+        # 如果用户配置全 0，则变成均匀分配
         norm_weights = [1/len(weights)] * len(weights)
     else:
         norm_weights = [w / weight_sum for w in weights]
 
     graph_award = 0.0
-    
-    # 收集子项指标
-    metrics_log = {}
 
     # step 4: 动态调用 reward 函数
     for func_name, weight in zip(funcs, norm_weights):
         if func_name not in reward_func_registry:
             raise ValueError(f"Unknown reward function: {func_name}")
 
-        try:
-            # 计算原始奖励值
-            reward_value = reward_func_registry[func_name]()
-        except Exception as e:
-            # 防止某个具体的 reward 函数内部报错（例如除以零）炸掉整个进程
-            print(f"Error in reward func {func_name}: {e}")
-            reward_value = 0.0
-        
-        metrics_log[f"train/rewards/graph_details/{func_name}"] = reward_value
+        reward_value = reward_func_registry[func_name]()
         graph_award += weight * reward_value
 
-    # 尝试发送到 WandB
-    try:
-        if wandb.run:
-            wandb.log(metrics_log, commit=False)
-    except Exception:
-        pass 
-
     return graph_award
+
 
 
 # ============================================================

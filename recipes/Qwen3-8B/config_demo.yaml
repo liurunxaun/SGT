@@ -16,7 +16,7 @@ system_prompt: "If you want to use <feedback>, please pay attention that its par
 bf16: true
 use_vllm: true
 do_eval: false
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 64
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
@@ -32,11 +32,11 @@ lr_scheduler_type: cosine_with_min_lr
 lr_scheduler_kwargs:
   min_lr_rate: 0.1
 max_prompt_length: 2048
-max_completion_length: 16392
+max_completion_length: 8192
 max_steps: -1
-num_generations: 2
-num_train_epochs: 1
-output_dir: /ssd5/rxliu/models/output/qwen3-8B-RL-20251129-2300
+num_generations: 4
+num_train_epochs: 2
+output_dir: /ssd5/rxliu/models/output/qwen3-8B-RL-20251201-0000
 overwrite_output_dir: true
 per_device_eval_batch_size: 8
 per_device_train_batch_size: 1
@@ -51,10 +51,13 @@ reward_funcs:
 reward_weights:
 - 1.0
 - 1.0
-- 1.0
+- 0.1
 # - 1.0
-save_strategy: "epoch"
-save_total_limit: 1
+# save_strategy: "epoch"
+# save_total_limit: 1
+save_strategy: "steps"  # 按步数保存
+save_steps: 100         # 每 100 步保存一次
+save_total_limit: 1     # 只保留最新的 1 个（会自动删除旧的，实现覆盖效果）
 seed: 42
 temperature: 0.6
 top_p: 0.95
