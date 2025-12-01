@@ -13,13 +13,13 @@ from inference_sglang import inference_sglang
 
 # ================= 参数配置 =================
 # sglang推理结果
-inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-SFT-MATH500-20251201-2144.xlsx"
+inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-SFT-checkpoint90-GSM8K-20251201-2200.xlsx"
 
 # sglang 推理参数
-dataset_path = "/ssd5/rxliu/datasets/MATH-500/test.parquet"
+dataset_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
 system_prompt = ""
-query_field = "problem"
-model = "qwen3-8B-SFT"
+query_field = "question"
+model = "qwen3-8B-SFT-checkpoint90"
 temperature = 0.6
 max_tokens = 32768
 
@@ -27,7 +27,7 @@ max_tokens = 32768
 answer_field = "answer"
 
 # 测试结果   
-result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-SFT-MATH500-20251201-2144.xlsx" 
+result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-SFT-checkpoint90-GSM8K-20251201-2200.xlsx" 
 
 # llm judge 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
@@ -39,7 +39,18 @@ client = OpenAI(api_key=API_KEY, base_url=API_URL)
 # ================= 数据处理函数 =================
 
 def process_ground_truth(text):
-        return text
+    """
+    处理 Ground Truth：提取 #### 之后的内容并去除空格
+    """
+    if not isinstance(text, str):
+        return str(text)
+    
+    if "####" in text:
+        # 分割并取最后一部分，去除前后空格
+        return text.split("####")[-1].strip()
+    else:
+        # 如果没有 ####，则返回去除空格的原文本
+        return text.strip()
 
 
 def process_row(row):

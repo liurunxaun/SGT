@@ -458,9 +458,9 @@ def construct_graph_and_score(content, script_args):
     if match:
         think_content = match.group(1).strip()
     else:
-        # [修改点]：如果找不到 <think> 标签，说明格式严重错误
+        # 如果找不到 <think> 标签，说明格式严重错误
         # 直接返回 0.0，避免把 None 传给 construct_graph 导致报错
-        # print("Graph Reward: No <think> tag found.") # 可选日志
+        print("Graph Reward: No <think> tag found.") # 可选日志
         return 0.0
 
     # 如果提取出的内容为空字符串，也直接返回 0
