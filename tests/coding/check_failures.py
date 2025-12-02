@@ -4,7 +4,7 @@ from pathlib import Path
 
 # ====== 修改这里：你的结果文件路径 ======
 # 注意：EvalPlus 会在原文件名后加上 _eval_results.json
-RESULT_FILE = "/data/home/the/rxliu/projects/open-r1-main/tests/results_coding/samples_humanevalplus_structured_cot_eval_results.json"
+RESULT_FILE = "/data/home/the/rxliu/projects/open-r1-main/tests/results_coding/samples_humanevalplus_CLEANED_eval_results.json"
 
 def main():
     path = Path(RESULT_FILE)

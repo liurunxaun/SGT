@@ -105,18 +105,23 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     # else:
     #     SGLANG_BASE_URL = "http://localhost:30000/v1"
 
-    if model == "qwen3-8B-SFT-checkpoint90":
-        SGLANG_BASE_URL = "http://localhost:30010/v1"
-    elif model == "qwen3-8B-SFT-checkpoint105":
-        SGLANG_BASE_URL = "http://localhost:30011/v1"
-    elif model == "qwen3-8B-SFT-checkpoint120":
-        SGLANG_BASE_URL = "http://localhost:30012/v1"
-    elif model == "qwen3-8B-SFT-checkpoint135":
-        SGLANG_BASE_URL = "http://localhost:30013/v1"
-    elif model == "qwen3-8B-SFT-checkpoint150":
-        SGLANG_BASE_URL = "http://localhost:30014/v1"
+    # if model == "qwen3-8B-SFT-checkpoint90":
+    #     SGLANG_BASE_URL = "http://localhost:30010/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint105":
+    #     SGLANG_BASE_URL = "http://localhost:30011/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint120":
+    #     SGLANG_BASE_URL = "http://localhost:30012/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint135":
+    #     SGLANG_BASE_URL = "http://localhost:30013/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint150":
+    #     SGLANG_BASE_URL = "http://localhost:30014/v1"
+    # else:
+    #     SGLANG_BASE_URL = "http://localhost:30010/v1"
+
+    if model == "qwen3-8B-RL-20251201-0000-checkpoint-100":
+        SGLANG_BASE_URL = "http://localhost:30020/v1"
     else:
-        SGLANG_BASE_URL = "http://localhost:30010/v1"
+        SGLANG_BASE_URL = "http://localhost:30020/v1"
 
     SGLANG_API_KEY = "sglang"  # 本地服务通常只需占位符
     CONCURRENCY = 64 # 并发控制：控制发送给SGLang的请求数量

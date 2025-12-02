@@ -1,5 +1,5 @@
 # Model arguments
-model_name_or_path: /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT
+model_name_or_path: /ssd5/rxliu/models/output/qwen3-8B-SFT-All-Data-1201-2017/checkpoint-105
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
@@ -25,18 +25,20 @@ do_eval: true
 eval_strategy: steps
 eval_steps: 20
 
-output_dir: /ssd5/rxliu/models/output/qwen3-8B-RL-20251201-2300
+wandb_project: qwen3-8B-RL-20251202-0000
+run_name: qwen3-8B-RL-20251202-0000
+output_dir: /ssd5/rxliu/models/output/qwen3-8B-RL-20251202-0000
 overwrite_output_dir: true
 
-learning_rate: 3.0e-05
+learning_rate: 5.0e-06
 gradient_accumulation_steps: 4
 max_prompt_length: 2048
 max_completion_length: 8192
 max_steps: -1
-num_generations: 16
+num_generations: 12
 num_train_epochs: 1
-per_device_eval_batch_size: 1
-per_device_train_batch_size: 1
+per_device_eval_batch_size: 2
+per_device_train_batch_size: 6
 
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
@@ -60,7 +62,6 @@ report_to:
 
 save_strategy: steps
 save_steps: 20
-# save_total_limit: 1
 seed: 42
 temperature: 0.6
 top_p: 0.95
