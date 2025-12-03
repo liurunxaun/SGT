@@ -31,6 +31,33 @@ from open_r1.utils.wandb_logging import init_wandb_training
 from trl import GRPOTrainer, ModelConfig, TrlParser, get_peft_config
 
 
+# 为了在evaluate时强制一条数据只采样一次，自定义一个GRPOTrainer类
+class GRPOCustomTrainer(GRPOTrainer):
+    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+        # 1. 保存训练时的设置 (比如 12)
+        original_generations = self.num_generations
+        
+        # 2. 强制改为 1，让评估只生成一条
+        #    这会同时影响 Sampler(采样器) 和 vLLM Generation(生成数量)
+        self.num_generations = 1 
+        
+        # 3. 清空 DataLoader 缓存！
+        #    如果不清空，Trainer 可能会直接复用之前包含 "重复12次" 逻辑的旧 DataLoader
+        if hasattr(self, "_eval_dataloaders"): 
+            self._eval_dataloaders = {}
+
+        try:
+            # 4. 执行正常的评估流程
+            return super().evaluate(eval_dataset, ignore_keys, metric_key_prefix)
+        finally:
+            # 5. 【关键】恢复现场，确保不影响后续训练
+            self.num_generations = original_generations
+            
+            # 再次清空缓存，确保下次训练或评估重新构建正确的 Sampler
+            if hasattr(self, "_eval_dataloaders"): 
+                self._eval_dataloaders = {}
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -112,8 +139,8 @@ def main(script_args, training_args, model_args):
     #############################
     # Initialize the GRPO trainer
     #############################
-    print("GRPOTrainer")
-    trainer = GRPOTrainer(
+    print("GRPOTrainer (Customized for Fast Eval)")
+    trainer = GRPOCustomTrainer(
         model=model,
         reward_funcs=reward_funcs,
         args=training_args,
