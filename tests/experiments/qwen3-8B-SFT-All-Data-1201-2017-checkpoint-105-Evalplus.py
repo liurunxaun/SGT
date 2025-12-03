@@ -273,13 +273,37 @@ def main():
     )
 
     # 2. 格式转换
+   # 2. 格式转换 (新增了“找回 task_id”的逻辑)
     print(f">>> [2/3] 提取 <answer> 代码并转换为 JSONL...")
     if not os.path.exists(inference_output):
         print("❌ 推理失败，未找到结果文件。")
         return
 
     try:
+        # 读取推理结果
         df = pd.read_excel(inference_output)
+        
+        # =========== 【修复补丁开始】 ===========
+        # 如果推理结果里没有 task_id，我们就去原始数据里拿！
+        if "task_id" not in df.columns:
+            print("⚠️ 发现结果缺少 'task_id'，正在从原始 Parquet 文件中恢复...")
+            # 读取原始数据
+            df_src = pd.read_parquet(DATASET_PATH)
+            
+            # 建立映射：假设 inference_sglang 保存的 'id' 列对应原始数据的索引
+            # 如果 inference_sglang 没保存 'id'，则假设顺序是一致的
+            if "id" in df.columns:
+                # 这里的 'id' 是 sglang 脚本里生成的行号
+                id_map = df_src["task_id"].to_dict() # index -> task_id
+                df["task_id"] = df["id"].map(id_map)
+            else:
+                # 兜底方案：直接按行号赋值 (前提是行数一致且顺序未乱)
+                if len(df) == len(df_src):
+                    df["task_id"] = df_src["task_id"].values
+                else:
+                    raise ValueError(f"行数不匹配！结果 {len(df)} 行，原数据 {len(df_src)} 行，无法自动恢复 task_id。")
+            print("✅ task_id 恢复成功！")
+        # =========== 【修复补丁结束】 ===========
         
         # 自动寻找输出列
         pred_col = "predicted_answer"
@@ -305,21 +329,26 @@ def main():
                 
     except Exception as e:
         print(f"❌ 转换出错: {e}")
+        import traceback
+        traceback.print_exc() # 打印详细报错方便排查
         return
 
     # 3. 评测
     print(f">>> [3/3] 运行 EvalPlus ({EVALPLUS_TYPE})...")
+    
+    # 【修改这里】去掉 --output-dir 参数
     cmd = [
         "evalplus.evaluate",
         "--dataset", EVALPLUS_TYPE,
-        "--samples", samples_jsonl,
-        "--output-dir", eval_result_dir
+        "--samples", samples_jsonl
+        # "--output-dir", eval_result_dir  <-- 删除这一行
     ]
     
     print(f"    执行: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
-        print(f"✅ 评测完成！报告位于: {eval_result_dir}")
+        # 结果通常会生成在 samples_jsonl 同目录下，文件名加个后缀
+        print(f"✅ 评测完成！请在 {samples_jsonl} 同目录下查找 _eval_results.json 文件")
     except subprocess.CalledProcessError as e:
         print(f"❌ EvalPlus 运行失败，错误码: {e.returncode}")
 

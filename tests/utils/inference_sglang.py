@@ -90,20 +90,20 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     print()
 
     # 处理SGLang 配置
-    # if model == "qwen3-8B":
-    #     SGLANG_BASE_URL = "http://localhost:30000/v1"
-    # elif model == "qwen3-8B-SFT":
-    #     SGLANG_BASE_URL = "http://localhost:30001/v1"
-    # elif model == "qwen3-8B-RL":
-    #     SGLANG_BASE_URL = "http://localhost:30002/v1"
-    # elif model == "qwen3-4B":
-    #     SGLANG_BASE_URL = "http://localhost:30003/v1"
-    # elif model == "qwen3-4B-SFT":
-    #     SGLANG_BASE_URL = "http://localhost:30004/v1"
-    # elif model == "qwen3-4B-RL":
-    #     SGLANG_BASE_URL = "http://localhost:30005/v1"
-    # else:
-    #     SGLANG_BASE_URL = "http://localhost:30000/v1"
+    if model == "qwen3-8B":
+        SGLANG_BASE_URL = "http://localhost:30000/v1"
+    elif model == "qwen3-8B-SFT":
+        SGLANG_BASE_URL = "http://localhost:30001/v1"
+    elif model == "qwen3-8B-RL":
+        SGLANG_BASE_URL = "http://localhost:30002/v1"
+    elif model == "qwen3-4B":
+        SGLANG_BASE_URL = "http://localhost:30003/v1"
+    elif model == "qwen3-4B-SFT":
+        SGLANG_BASE_URL = "http://localhost:30004/v1"
+    elif model == "qwen3-4B-RL":
+        SGLANG_BASE_URL = "http://localhost:30005/v1"
+    else:
+        SGLANG_BASE_URL = "http://localhost:30000/v1"
 
     # if model == "qwen3-8B-SFT-checkpoint90":
     #     SGLANG_BASE_URL = "http://localhost:30010/v1"
