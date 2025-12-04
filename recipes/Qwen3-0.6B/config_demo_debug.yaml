@@ -74,3 +74,6 @@ graph_reward_weights:
 - 1.0
 - 1.0
 - 3.0
+
+num_iterations: 4
+scale_rewards: false
