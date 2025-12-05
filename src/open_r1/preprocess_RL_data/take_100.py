@@ -3,7 +3,7 @@ import os
 import shutil
 
 # 文件路径
-file_path = "/ssd5/rxliu/datasets/RL-Data/shuffled_10k_train9k_eval300/test.parquet"
+file_path = "/ssd5/rxliu/datasets/RL-Data/gsm8k/test.parquet"
 
 # 1. 为了安全，先备份原文件 (如果备份不存在的话)
 backup_path = file_path + ".bak"
@@ -18,7 +18,7 @@ df = pd.read_parquet(file_path)
 print(f"原始数据行数: {len(df)}")
 
 # 3. 截取前 100 条
-df_100 = df.head(100)
+df_100 = df.head(300)
 print(f"截取后数据行数: {len(df_100)}")
 
 # 4. 覆盖保存回原路径

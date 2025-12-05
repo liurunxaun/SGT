@@ -16,14 +16,14 @@ import re
 import pandas as pd
 
 # 输入路径
-src_path = "/ssd5/rxliu/datasets/gsm8k/main/train-00000-of-00001.parquet"
+src_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
 
 # 输出目录
 dst_dir = "/ssd5/rxliu/datasets/gsm8k_processed"
 os.makedirs(dst_dir, exist_ok=True)
 
 # 输出路径
-dst_path = os.path.join(dst_dir, "train-00000-of-00001.parquet")
+dst_path = os.path.join(dst_dir, "test-00000-of-00001.parquet")
 
 # 读取 parquet
 df = pd.read_parquet(src_path)

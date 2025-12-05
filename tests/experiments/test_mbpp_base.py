@@ -4,82 +4,89 @@ import json
 import re
 import subprocess
 import traceback
-
 import pandas as pd
 
 # ================= 0. 环境设置 =================
-# 添加工具路径 (根据你的项目结构)
 sys.path.append("/data/home/the/rxliu/projects/open-r1-main/tests/utils")
 from inference_sglang import inference_sglang
 
-
 # ================= 1. 参数配置 =================
-
 MODEL_NAME = "Qwen3-8B-Base"
-TIME_TAG = "20251203-MbppPlus-Fixed-V2"
+# 改个名字，避免和旧文件混淆
+TIME_TAG = "20251204-MbppPlus-PromptTrigger" 
 
-# 端口 (和你启动 sglang server 时一致)
 SERVER_PORT = 30000
-
-# MBPP+ Parquet 数据路径（HF 的 evalplus/mbppplus）
 DATASET_PATH = "/ssd5/rxliu/datasets/mbppplus/data/test-00000-of-00001-d5781c9c51e02795.parquet"
 DATASET_NAME = "MbppPlus"
-EVALPLUS_TYPE = "mbpp"  # 目前只用于标识
 
-# 推理参数
-TEMPERATURE = 0.2          # 建议 Base 模型用低温，减少瞎改函数名
-MAX_TOKENS =  32768        # MBPP 题目代码量不大，不用 3w 这么夸张
+# 按你的要求保持 32768
+MAX_TOKENS = 32768 
+# Base 模型建议低温，0.0 或 0.2
+TEMPERATURE = 0.0  
 
-# 输入列：在 parquet 里用作 prompt 的列
-# 对 HF 的 mbppplus 来说，prompt 是自然语言描述，不带 def 行，没关系
-QUERY_FIELD = "prompt"
-
-# 输出路径
 BASE_OUTPUT_DIR = "/ssd5/rxliu/projects/open-r1-main/results"
 os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
 
 INFERENCE_OUTPUT = f"{BASE_OUTPUT_DIR}/inference-{MODEL_NAME}-{DATASET_NAME}-{TIME_TAG}.xlsx"
 SAMPLES_JSONL = f"{BASE_OUTPUT_DIR}/samples-{MODEL_NAME}-{DATASET_NAME}-{TIME_TAG}.jsonl"
 
-# ================= 2. System Prompt =================
-# 对 Base 模型做 code completion，尽量不用 chat 风格 prompt
-SYSTEM_PROMPT = ""
-
-
 # ================= 3. 代码清洗函数 =================
-
 def sanitize_code(text: str) -> str:
     """
-    对模型生成的代码做轻量清洗：
-    - 去掉 markdown ``` 包裹
-    - 去掉可能的前后多余空行
-    不做过度处理，避免误删合法代码。
+    针对 Base 模型 + 强制 Prompt 的清洗策略。
+    因为 Prompt 结尾已经是 ```python，模型输出的通常直接是代码。
+    我们主要负责清理结尾的 markdown 闭合符和可能的废话。
     """
     if not isinstance(text, str):
         return ""
-
-    # 去掉 ```python 或 ``` 包裹
-    text = re.sub(r"^```python\s*", "", text.strip(), flags=re.IGNORECASE)
-    text = re.sub(r"^```\s*", "", text.strip())
-    text = re.sub(r"\s*```$", "", text.strip())
-
-    return text.strip()
-
+    
+    text = text.strip()
+    
+    # 1. 去掉结尾的 ``` (不管是不是 python)
+    text = re.sub(r"```.*$", "", text, flags=re.DOTALL).strip()
+    
+    # 2. 如果模型还是输出了 <answer> 标签 (Qwen 系列特性)，提取内部
+    pattern_answer = r"<answer>\s*(.*?)\s*</answer>"
+    match = re.search(pattern_answer, text, re.DOTALL | re.IGNORECASE)
+    if match:
+        text = match.group(1).strip()
+        
+    return text
 
 # ================= 4. 主程序 =================
-
 def main():
-    print(f"=== 任务: {MODEL_NAME} on {DATASET_NAME} (Base Model for MBPP+) ===")
-    print(f"=== 数据路径: {DATASET_PATH} ===")
+    print(f"=== 任务: {MODEL_NAME} (Base Mode with Prompt Trigger) ===")
+    print(f"=== Port: {SERVER_PORT} | Max Tokens: {MAX_TOKENS} ===")
+    
+    # ---------------- Step 0: 预处理 Prompt (核心修复) ----------------
+    print(f"\n>>> [0/3] 构建 Base 模型专用 Prompt...")
+    try:
+        df = pd.read_parquet(DATASET_PATH)
+        
+        # 【核心修改】
+        # 给每个 prompt 后面强行拼接 "\n```python\n"
+        # 这样模型会以为它正在补全一个 Markdown 代码块，从而直接输出代码
+        df["engineered_prompt"] = df["prompt"].apply(
+            lambda x: f'{x}\n\n```python\n'
+        )
+        
+        # 保存一个临时文件供 Sglang 读取
+        temp_parquet = f"{BASE_OUTPUT_DIR}/temp_input_mbpp_base.parquet"
+        df.to_parquet(temp_parquet)
+        print(f"✅ 临时 Prompt 文件已生成: {temp_parquet}")
+        
+    except Exception as e:
+        print(f"❌ 数据预处理失败: {e}")
+        return
 
     # ---------------- Step 1: 推理 ----------------
-    print(f"\n>>> [1/3] Sglang 推理 (Port {SERVER_PORT})...")
+    print(f"\n>>> [1/3] Sglang 推理...")
     try:
         inference_sglang(
-            DATASET_PATH,    # 包含 task_id / prompt / code 等
-            SYSTEM_PROMPT,   # 这里传空字符串
-            QUERY_FIELD,     # 用 parquet 里的 prompt 列作为输入
-            "code",          # 让 inference_sglang 把输出写到一个列，名字不重要
+            temp_parquet,            # 使用处理过的数据
+            "",                      # System Prompt 留空 (靠 engineered_prompt 引导)
+            "engineered_prompt",     # 使用我们构造的带 trigger 的列
+            "code",                  
             INFERENCE_OUTPUT,
             MODEL_NAME,
             TEMPERATURE,
@@ -87,107 +94,78 @@ def main():
         )
     except Exception as e:
         print(f"❌ 推理错误: {e}")
-        traceback.print_exc()
         return
 
     # ---------------- Step 2: 转换 JSONL ----------------
-    print(f"\n>>> [2/3] 转换为 JSONL（只保留模型生成的 completion）...")
-
+    print(f"\n>>> [2/3] 转换为 JSONL...")
     if not os.path.exists(INFERENCE_OUTPUT):
-        print(f"❌ 找不到推理文件: {INFERENCE_OUTPUT}")
+        print("❌ 推理文件未生成")
         return
 
     try:
-        # 读取推理结果
         df_pred = pd.read_excel(INFERENCE_OUTPUT)
-
-        # 读取原始数据（至少要拿到 task_id）
-        df_src = pd.read_parquet(DATASET_PATH)
-
-        if "task_id" not in df_src.columns:
-            print("❌ 原始 parquet 缺少 'task_id' 列，无法对齐 MBPP+。")
-            return
-
-        # 确保 df_pred 也有 task_id 列
-        if "task_id" not in df_pred.columns:
-            # 如果长度一致，按顺序对齐
-            if len(df_pred) != len(df_src):
-                print(f"❌ df_pred 和 df_src 长度不一致，且 df_pred 没有 task_id，无法安全对齐！")
-                print(f"    df_pred: {len(df_pred)}, df_src: {len(df_src)}")
-                return
-            df_pred["task_id"] = df_src["task_id"].values
-
-        # 为了稳妥，可以做一个 inner merge 检查对齐情况（可选）
-        # 这里只用 df_pred 本身，也没问题，因为 task_id 已对齐
-        merged_df = df_pred.copy()
-
-        # 找到预测结果所在列
-        pred_col = None
-        if "predicted_answer" in merged_df.columns:
-            pred_col = "predicted_answer"
+        
+        # 恢复 task_id (从原始 df 拿，防止顺序错乱或丢失)
+        if len(df_pred) == len(df):
+            df_pred["task_id"] = df["task_id"].values
         else:
-            # 尝试模糊匹配列名里带 'pred' 或 'output' 的列
-            candidates = [
-                c for c in merged_df.columns
-                if isinstance(c, str) and ("pred" in c.lower() or "output" in c.lower())
-            ]
-            if candidates:
-                pred_col = candidates[0]
-
-        if pred_col is None:
-            print("❌ 找不到预测结果列（例如 'predicted_answer'、'*pred*' 或 '*output*'）")
-            print("当前列名:", list(merged_df.columns))
+            print(f"❌ 行数不匹配 (Pred: {len(df_pred)} vs Src: {len(df)})，尝试通过 merge 恢复...")
+            # 如果真的行数不对，这里需要更复杂的 merge，但通常 sglang 保持顺序
+            # 简单处理：报错退出，避免错位
             return
 
-        print(f"使用预测列: {pred_col}")
+        # 找预测列
+        pred_col = None
+        for col in df_pred.columns:
+            if "pred" in str(col).lower() or "output" in str(col).lower():
+                pred_col = col
+                break
+        
+        if not pred_col:
+            print("❌ 找不到预测列")
+            return
 
-        # 构造 samples.jsonl
         samples = []
-        for _, row in merged_df.iterrows():
-            raw_tid = row["task_id"]
-            tid = str(raw_tid)
-
-            # 统一成 EvalPlus 的 Mbpp/xxx 格式
-            if not tid.startswith("Mbpp/"):
-                tid = f"Mbpp/{tid}"
-
+        for _, row in df_pred.iterrows():
+            raw_tid = str(row["task_id"])
+            # 确保格式是 Mbpp/123
+            tid = raw_tid if raw_tid.startswith("Mbpp/") else f"Mbpp/{raw_tid}"
+            
+            # 获取生成的代码
             generated = str(row.get(pred_col, ""))
-            generated = sanitize_code(generated)
-
-            samples.append({
-                "task_id": tid,
-                # 注意：completion 只放「模型生成的部分」
-                # EvalPlus 会自己用 problem["prompt"] + completion 来构造完整程序
-                "completion": generated,
-            })
+            
+            # 清洗
+            clean_code = sanitize_code(generated)
+            
+            samples.append({"task_id": tid, "completion": clean_code})
 
         with open(SAMPLES_JSONL, "w", encoding="utf-8") as f:
             for s in samples:
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
-
-        print(f"✅ JSONL 已生成: {SAMPLES_JSONL}")
-
+        print(f"✅ JSONL 生成完毕: {SAMPLES_JSONL}")
+        
     except Exception as e:
-        print(f"❌ 转换出错: {e}")
+        print(f"❌ 转换 JSONL 失败: {e}")
         traceback.print_exc()
         return
 
     # ---------------- Step 3: 评测 ----------------
-    print(f"\n>>> [3/3] 运行 EvalPlus (mbpp)...")
+    print(f"\n>>> [3/3] 运行 EvalPlus...")
+    
+    # 【强制删除缓存】防止读取旧的 0 分结果
+    cache_file = SAMPLES_JSONL.replace(".jsonl", "_eval_results.json")
+    if os.path.exists(cache_file):
+        os.remove(cache_file)
+        print("🗑️  已删除旧的评测缓存文件，强制重测。")
 
-    cmd = [
-        "evalplus.evaluate",
-        "--dataset", "mbpp",  # EvalPlus 里 mbpp / mbpp+ 都用这一个名字
-        "--samples", SAMPLES_JSONL,
-    ]
-
-    print("执行命令:", " ".join(cmd))
+    cmd = ["evalplus.evaluate", "--dataset", "mbpp", "--samples", SAMPLES_JSONL]
+    
+    print(f"执行命令: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
-        print("\n✅ 评测完成！")
+        print("\n✅ 评测流程结束！")
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ EvalPlus 运行失败 (Code {e.returncode})")
-
+        print(f"\n❌ EvalPlus 运行报错 (Code {e.returncode})")
 
 if __name__ == "__main__":
     main()
