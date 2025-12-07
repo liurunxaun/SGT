@@ -119,8 +119,25 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
 
     if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300":
         SGLANG_BASE_URL = "http://localhost:30030/v1"
-    if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
+    elif model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
         SGLANG_BASE_URL = "http://localhost:30031/v1"
+    
+    if model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-15":
+        SGLANG_BASE_URL = "http://localhost:30040/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-30":
+        SGLANG_BASE_URL = "http://localhost:30041/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-45":
+        SGLANG_BASE_URL = "http://localhost:30042/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-60":
+        SGLANG_BASE_URL = "http://localhost:30043/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-75":
+        SGLANG_BASE_URL = "http://localhost:30044/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-90":
+        SGLANG_BASE_URL = "http://localhost:30045/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-105":
+        SGLANG_BASE_URL = "http://localhost:30046/v1"
+    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-120":
+        SGLANG_BASE_URL = "http://localhost:30047/v1"
 
     SGLANG_API_KEY = "sglang"  # 本地服务通常只需占位符
     CONCURRENCY = 64 # 并发控制：控制发送给SGLang的请求数量
@@ -132,8 +149,7 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     print()
 
     # 初始化 OpenAI Client 和 信号量
-    SGLANG_BASE_URL = "http://localhost:30000/v1"
-    SGLANG_API_KEY = "EMPTY"
+  
     client = AsyncOpenAI(base_url=SGLANG_BASE_URL, api_key=SGLANG_API_KEY)
     semaphore = asyncio.Semaphore(CONCURRENCY)
     loop = asyncio.get_running_loop()
@@ -156,10 +172,22 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     results.sort(key=lambda x: x['id'])
 
     # 保存结果 (保留原逻辑)
+# 保存结果
     df_results = pd.DataFrame(results)
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df_results.to_excel(output_path, index=False)
+
+    # ✅ 根据文件名后缀自动选择保存格式
+    if output_path.endswith(".jsonl"):
+        print(f"Saving to JSONL: {output_path}")
+        df_results.to_json(output_path, orient="records", lines=True, force_ascii=False)
+    elif output_path.endswith(".xlsx"):
+        print(f"Saving to Excel: {output_path}")
+        df_results.to_excel(output_path, index=False)
+    else:
+        # 兜底 CSV
+        print(f"Unknown format, saving to CSV: {output_path}")
+        df_results.to_csv(output_path, index=False)
 
     print("\n========inference finished========")
 

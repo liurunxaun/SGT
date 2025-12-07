@@ -19,12 +19,12 @@ import time as time_module # 导入time模块用于获取当前时间
 REPETITIONS = 3 # <--- 新增：重复执行的次数
 
 # Sglang 推理参数
-dataset_name = "GSM8K-300"
-dataset_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001-300.parquet"
+dataset_name = "GSM8K"
+dataset_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
 query_field = "question"
-model = "qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300"
+model = "qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-15"
 temperature = 0.6
-max_tokens = 4196
+max_tokens = 8192
 system_prompt = ""
 
 # llm judge 配置
