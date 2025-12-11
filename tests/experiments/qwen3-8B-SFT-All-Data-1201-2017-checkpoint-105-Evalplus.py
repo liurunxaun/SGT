@@ -200,8 +200,8 @@ FINAL_SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + "\n\n" + ONE_SHOT_USER_Q + "\n" + ONE
 # ================= 2. 参数配置 =================
 
 MODEL_NAME = "qwen3-8B-SFT-checkpoint105"
-TIME_TAG = "20251203-1500"
-TEMPERATURE = 0.6       # 保持 0.6
+TIME_TAG = "20251207-1500"
+TEMPERATURE = 0       # 保持 0.6
 MAX_TOKENS = 32768      # 保持 32768
 
 # 只测试 HumanEvalPlus

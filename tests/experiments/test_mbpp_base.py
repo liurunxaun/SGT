@@ -27,7 +27,6 @@ MODEL_NAME = "Qwen3-8B-Base"
 # 标记为 CoT 版本
 TIME_TAG = "20251204-MbppPlus-CoT-V1" 
 
-SERVER_PORT = 30000
 DATASET_PATH = "/ssd5/rxliu/datasets/mbppplus/data/test-00000-of-00001-d5781c9c51e02795.parquet"
 
 # CoT 需要更长的输出长度

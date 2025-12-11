@@ -13,21 +13,21 @@ from inference_sglang import inference_sglang
 
 # ================= 参数配置 =================
 # sglang推理结果
-inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-MATH500-20251127-2300.xlsx"
+inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-Base-MATH500-20251211-2300.xlsx"
 
 # sglang 推理参数
 dataset_path = "/ssd5/rxliu/datasets/MATH-500/test.parquet"
 system_prompt = ""
 query_field = "problem"
-model = "qwen3-8B"
+model = "qwen3-8B-Base"
 temperature = 0.6
-max_tokens = 32768
+max_tokens = 8192
 
 # 测试参数
 answer_field = "answer"
 
 # 测试结果   
-result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-MATH500-20251127-2300.xlsx" 
+result_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/result-qwen3-8B-Base-MATH500-20251211-2300.xlsx" 
 
 # llm judge 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"

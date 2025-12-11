@@ -3,9 +3,9 @@ import os
 import shutil
 
 # 文件路径
-file_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001.parquet"
-output_put_path = "/ssd5/rxliu/datasets/gsm8k/main/test-00000-of-00001-300.parquet"
-x = 300
+file_path = "/ssd5/rxliu/datasets/DeepScaleR/0000.parquet"
+output_put_path = "/ssd5/rxliu/datasets/DeepScaleR/0000.parquet"
+x = 100
 
 # 读取 Parquet 文件
 df = pd.read_parquet(file_path)

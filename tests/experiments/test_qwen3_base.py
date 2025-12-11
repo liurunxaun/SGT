@@ -25,7 +25,7 @@ DATASET_NAME = "HumanEvalPlus"
 EVALPLUS_TYPE = "humaneval"
 
 # 推理参数
-TEMPERATURE = 0.6
+TEMPERATURE = 0
 MAX_TOKENS = 32768
 QUERY_FIELD = "prompt"
 

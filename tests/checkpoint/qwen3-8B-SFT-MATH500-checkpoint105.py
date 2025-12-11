@@ -21,7 +21,7 @@ system_prompt = ""
 query_field = "problem"
 model = "qwen3-8B-SFT-checkpoint105"
 temperature = 0.6
-max_tokens = 32768
+max_tokens = 30000
 
 # 测试参数
 answer_field = "answer"

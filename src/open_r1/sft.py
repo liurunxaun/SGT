@@ -12,62 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-Supervised fine-tuning script for decoder language models.
-
-Usage:
-
-# One 1 node of 8 x H100s
-export PYTHONPATH=~/rxliu/projects/open-r1-main/src:$PYTHONPATH
-unset http_proxy
-unset https_proxy
-unset HTTP_PROXY
-unset HTTPS_PROXY
-unset all_proxy
-unset ALL_PROXY
-accelerate launch \
-    --config_file=recipes/accelerate_configs/zero2.yaml \
-    src/open_r1/sft.py \
-    --model_name_or_path /ssd5/rxliu/models/Qwen3-8B \
-    --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
-    --dataset_config default \
-    --learning_rate 3.0e-5 \
-    --num_train_epochs 5 \
-    --max_seq_length 8192 \
-    --per_device_train_batch_size 8 \
-    --gradient_checkpointing \
-    --bf16 \
-    --use_liger_kernel \
-    --report_to wandb \
-    --run_name Qwen3-8B-Math-SFT-Epoch5 \
-    --logging_steps 1 \
-    --output_dir /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT \
-    --eval_strategy epoch \
-    --per_device_eval_batch_size 4
-
-    accelerate launch \
-    --config_file=recipes/accelerate_configs/zero2.yaml \
-    src/open_r1/sft.py \
-    --model_name_or_path /ssd5/rxliu/models/Qwen3-4B \
-    --dataset_name /ssd5/rxliu/datasets/SFT-Data/All-data-parquet \
-    --dataset_config default \
-    --learning_rate 3.0e-5 \
-    --num_train_epochs 5 \
-    --max_seq_length 8192 \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 2 \
-    --gradient_checkpointing \
-    --bf16 \
-    --packing \
-    --use_liger_kernel \
-    --report_to wandb \
-    --run_name Qwen3-4B-Math-SFT-Packed \
-    --logging_steps 1 \
-    --output_dir /ssd5/rxliu/models/output/Qwen3-4B-all-data-SFT \
-    --eval_strategy epoch \
-    --per_device_eval_batch_size 1
-"""
-
 import logging
 import os
 import sys
@@ -83,11 +27,7 @@ from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
-# os.environ["WANDB_API_KEY"] = '7b5e421309a7f263058faebac5cb0bc4e74608f2'
-# os.environ["WANDB_PROJECT"] = "2026ACL-Qwen3-4b-SFT-all-data-last"
-os.environ["WANDB_PROJECT"] = "qwen3-8B-SFT-all-data-1201-2017"
 logger = logging.getLogger(__name__)
-
 
 def main(script_args, training_args, model_args):
     set_seed(training_args.seed)

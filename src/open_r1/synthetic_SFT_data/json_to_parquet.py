@@ -14,6 +14,6 @@ def simple_json_to_parquet(json_path, parquet_path):
 
 if __name__ == "__main__":
     simple_json_to_parquet(
-        "/ssd5/rxliu/datasets/MATH-500/test.jsonl",
-        "/ssd5/rxliu/datasets/MATH-500/test.parquet"
+        "/ssd5/rxliu/datasets/rcmu/new_math_data.jsonl",
+        "/ssd5/rxliu/datasets/rcmu/new_math_data.parquet"
     )

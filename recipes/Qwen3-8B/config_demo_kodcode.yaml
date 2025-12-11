@@ -1,0 +1,277 @@
+# ============================================================
+# Model arguments
+# ============================================================
+# 请替换为你做过 SFT (Code SFT) 的模型路径，最好是懂一点代码和 <think> 格式的 checkpoint
+model_name_or_path: /ssd5/rxliu/models/output/Qwen3-8B-all-data-sft-last-SFT
+model_revision: main
+torch_dtype: bfloat16
+attn_implementation: flash_attention_2
+
+# ============================================================
+# Chat Template (关键)
+# ============================================================
+# 这里的模板和你给出的一样，它非常关键，因为它确保了 <think> 标签的正确解析
+# 如果你的模型 SFT 时用的模板不同，这里需要替换。
+# 既然是 OpenR1 复现 DeepSeek-R1，通常保留这个复杂的模板是安全的。
+chat_template: "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0].role == 'system' %}\n        {{- messages[0].content + '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0].content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" and message.content is string and not(message.content.startswith('<tool_response>') and message.content.endswith('</tool_response>')) %}\n        {%- set ns.multi_step_tool = false %}\n        {%- set ns.last_query_index = index %}\n    {%- endif %}\n{%- endfor %}\n{%- for message in messages %}\n    {%- if message.content is string %}\n        {%- set content = message.content %}\n    {%- else %}\n        {%- set content = '' %}\n    {%- endif %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {%- if loop.last or (not loop.last and reasoning_content) %}\n                {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content.strip('\\n') + '\\n</think>\\n\\n' + content.lstrip('\\n') }}\n            {%- else %}\n                {{- '<|im_start|>' + message.role + '\\n' + content }}\n            {%- endif %}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and content) or (not loop.first) %}\n                    {{- '\\n' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- '<tool_call>\\n{\"name\": \"' }}\n                {{- tool_call.name }}\n                {{- '\", \"arguments\": ' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- '}\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}"
+
+# ============================================================
+# Data training arguments (重要修改)
+# ============================================================
+# 1. 替换为 KodCode 数据集路径
+dataset_name: /ssd5/rxliu/datasets/RL-Data/kodcode_light_10k
+# 2. 确保这个列名是你的 Prompt 列名 (KodCode通常是 prompt 或 question)
+dataset_prompt_column: question
+
+# 3. System Prompt (核心逻辑修改)
+# 针对 Code + Graph RL，我们要引导它做三件事：思考、用图结构标签、写代码。
+system_prompt: |
+  You are a helpful AI Assistant that provides well-reasoned and detailed responses. You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>
+  ...
+  </think>
+  <answer>
+  ...
+  </answer>
+
+  Besides, you must comply with below requirements:
+  1.During the <think> phase you should organize the chain of thought using below tags:
+  - known: known conditions that can be found in the question. **For coding tasks, you MUST explicitly list Input/Output types, Constraints, and potential Edge Cases (e.g., empty inputs, negative numbers).**
+  - generate: from the current reasoning state, generate one or more new reasoning steps. It represents a step forward in the process of reasoning. **If writing code, first outline the logic (Plan), then write the code. If performing data transformation (e.g., removing spaces), you MUST output the transformed result explicitly to avoid repetitive calculation.**
+  - aggregate: merge multiple steps or jointly reason over them to produce a new reasoning step.
+  - feedback: go back to a previous reasoning step. Used to re-examine the correctness of a step or process. **For coding, perform a "Dry Run" by manually executing the code with a specific test case step-by-step.**
+  - refine: improve the current node. It is a refined modification of a certain node's statement, without producing a substantial step forward in the reasoning process.
+  - associative thinking: comparing the curent reasoning graph structure with other similar graph structures, in order to facilitate the current reasoning process. **For example, recalling specific algorithms (BFS, DP) or data structures suitable for the problem.**
+  - reverse thinking: starting from the goal of the problem, considering possible solution paths, and filtering them with the given conditions. This builds a abstruct reverse reasoning path from the goal to the conditions, from the unknown to the known. **For coding, consider what the Output implies about the necessary Logic (Test-Driven Thinking).**
+
+  2.At each reasoning step you must choose one of these tags. You cannot create other labels on your own. 
+  3.Wrap the reasoning step with the selected tag. For example:<generate>...</generate>.
+  4.The complete think phase must start with <known>...</konwn>, and the final inference tag must include the final result of the question and must belong to one of the seven tags mentioned above.
+  5.The tag content inside is a series of thinking steps, organized in a node based manner with node_id and parents. You need to ensure that the thinking process is coherent and effective, and ultimately these nodes can be organized into a directed graph. The format example for each node is as follows:
+  {
+      node_id:The unique identifier of a node, usually an integer, increasing from 1.
+      parents:A list of parent node IDs for this node, used to establish inference dependencies. If there is no parent node, you can fill in none.
+      content:The content of this step. **WARNING: When writing code inside JSON, ensure all quotes (") and newlines (\\n) are properly escaped.**
+  }
+  6.For the content wrapped in different tags, there are the following formal requirements:
+  - konwn:It wraps one or more nodes, and the parents of these nodes should all be "none".
+  - generate:It wraps one or more nodels, (1) If it wraps one node, the parents of this nodes should be a single node. (2) If it wraps two or more nodes, the parents of these nodes should be a same single node.
+  - aggregate：It wraps one node, and the parent of this node should be multiple nodes.
+  - feedback：It wraps one node, and the parent of this node should be one or more nodes. Its parent_ids must include the last node of the current reasoning chain.
+  - refine: It wraps one node, and the parent of this node should be the last node in the current reasoning chain.
+  - associative thinking：It wraps one node, and the parent of this node should be one or more nodes.
+  - reverse thinking：It wraps one node, and the parent of this node should be one or more nodes.
+  7.If there are multiple nodes in a tag, each node cannot use other nodes in the same tag as parent node. If necessary, it needs to be placed in a new tag.
+  8.If a tag contains multiple nodes, the nodes should be separated by commas. Within a node, different tags do not require commas and should be separated by line breaks. 
+  9. Anti-Looping Rule: Do not perform mental simulations in a loop within a single node. If you calculate a value or transform a string, WRITE IT DOWN as a fact in the content and move on. Do not go back to question it unless a 'feedback' step proves it wrong.
+
+  **10. Coding Format Rules (CRITICAL):**
+  - The content inside `<answer>` must be PURE Python code. **Do NOT include any XML tags (like `</think>`) inside `<answer>`.**
+  - **NO INDENTATION for top-level definitions:** The `import` statements and the `def function_name(...)` line MUST start at the very beginning of the line (column 0). Do NOT add extra spaces before `def`.
+  - **Self-Contained:** Include all necessary imports (e.g., `from typing import List`).
+
+  **11. Engineering Safety Rules:**
+  - **No Side Effects:** DO NOT modify the input arguments in-place (e.g., use `sorted(nums)` instead of `nums.sort()`).
+  - **Strict Signature:** Use the EXACT function name and argument names provided in the prompt, even if they contain typos. Do not change the API.
+
+  Please strictly follow the above format and requirements.
+
+  Here is an example of how you should reason and answer:
+
+  User Question:
+  You are given an integer array coins representing coins of different denominations and an integer amount representing a total amount of money. Return the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up by any combination of the coins, return -1.
+  Function Signature: def coin_change(coins: List[int], amount: int) -> int:
+
+  Assistant Response:
+  <think>
+    <known>
+      {
+        node_id:1,
+        parents:none,
+        content:Input: List of integers 'coins', Integer 'amount'. Goal: Find Minimum count of coins to sum to 'amount'.
+      },
+      {
+        node_id:2,
+        parents:none,
+        content:Constraints: 'amount' can be 0 (return 0). If unsolvable, return -1. Coins are positive integers.
+      },
+      {
+        node_id:3,
+        parents:none,
+        content:Edge Cases: Coins list is empty; Amount is negative; Large amount vs small coins (performance).
+      }
+    </known>
+
+    <reverse thinking>
+      {
+        node_id:4,
+        parents:1,
+        content:To reach the target 'amount' with minimum coins, the last coin added must be some coin 'c' from the list. This means the problem reduces to finding min coins for 'amount - c'. This recursive structure implies we solve from 0 up to 'amount'.
+      }
+    </reverse thinking>
+
+    <associative thinking>
+      {
+        node_id:5,
+        parents:4,
+        content:This structure looks like the 'Unbounded Knapsack Problem'. A common approach is Greedy (always take largest) or Dynamic Programming. Let's try to verify if Greedy works because it is faster.
+      }
+    </associative thinking>
+
+    <feedback>
+      {
+        node_id:6,
+        parents:5,
+        content:Verifying Greedy: Counter-example check. Coins=[1, 3, 4], Amount=6.
+  Greedy path: Take 4, remain 2. Take 1, remain 1. Take 1. Total 3 coins (4+1+1).
+  Optimal path: Take 3, remain 3. Take 3. Total 2 coins (3+3).
+  Conclusion: Greedy FAILS. Must use Dynamic Programming.
+      }
+    </feedback>
+
+    <generate>
+      {
+        node_id:7,
+        parents:6,
+        content:Plan (DP approach):
+  1. Create array dp[amount + 1] initialized to 'infinity' (amount + 1).
+  2. Set dp[0] = 0.
+  3. Iterate i from 1 to amount.
+  4. For each coin, if i >= coin, dp[i] = min(dp[i], dp[i-coin] + 1).
+      }
+    </generate>
+
+    <aggregate>
+      {
+        node_id:8,
+        parents:2,3,7,
+        content:Combine DP Plan with Edge Cases:
+  If amount is 0, return 0 immediately.
+  After DP loop, if dp[amount] > amount, implies no solution, return -1.
+      }
+    </aggregate>
+
+    <generate>
+      {
+        node_id:9,
+        parents:8,
+        content:Implementation Code:
+  def coin_change(coins, amount):
+      if amount == 0: return 0
+      max_val = amount + 1
+      dp = [max_val] * (max_val)
+      dp[0] = 0
+      for i in range(1, amount + 1):
+          for coin in coins:
+              if i - coin >= 0:
+                  dp[i] = min(dp[i], dp[i - coin] + 1)
+      return dp[amount] if dp[amount] != max_val else -1
+  }
+    </generate> 
+    
+    <feedback> 
+      { node_id:10,
+        parents:9,
+        content:Dry Run Trace: Input: coins=[1, 2], amount=3. Init: dp=[0, 4, 4, 4]. i=1: coin=1 -> dp[1]=min(4, dp[0]+1)=1. dp=[0,1,4,4]. i=2: coin=1 -> dp[2]=min(4, dp[1]+1)=2. coin=2 -> dp[2]=min(2, dp[0]+1)=1. dp=[0,1,1,4]. i=3: coin=1 -> dp[3]=min(4, dp[2]+1)=2. coin=2 -> dp[3]=min(2, dp[1]+1)=2. dp=[0,1,1,2]. Result: 2. Logic holds. 
+      } 
+    </feedback> 
+        
+  </think>
+  <answer>
+  from typing import List
+
+  def coin_change(coins: List[int], amount: int) -> int:
+      \"\"\"
+      Computes the fewest number of coins needed to make up the amount.
+      Returns -1 if impossible.
+      \"\"\"
+      if amount == 0:
+          return 0
+
+      # Initialize DP array. amount + 1 acts as infinity.
+      max_val = amount + 1
+      dp = [max_val] * (amount + 1)
+      dp[0] = 0
+
+      for i in range(1, amount + 1):
+          for coin in coins:
+              if coin <= i:
+                  dp[i] = min(dp[i], dp[i - coin] + 1)
+
+      return dp[amount] if dp[amount] <= amount else -1
+  </answer>
+
+# ============================================================
+# GRPO trainer config
+# ============================================================
+bf16: true
+use_vllm: true
+
+do_eval: true
+eval_strategy: "steps"
+eval_steps: 50 # KodCode 跑起来比较慢，eval 间隔可以大一点
+eval_on_start: true
+
+# WandB Log
+wandb_project: qwen3-kodcode-rl-graph-v1-20251208
+run_name: qwen3-kodcode-rl-graph-v1-20251208
+output_dir: /ssd5/rxliu/models/output/qwen3-kodcode-rl-graph-v1-20251208
+overwrite_output_dir: true
+
+learning_rate: 1.0e-06 # RL 阶段 LR 要小，防止崩
+gradient_accumulation_steps: 8
+max_prompt_length: 1024
+max_completion_length: 16384 # 图结构 + 代码 会很长，2048是起步，不够再加
+max_steps: -1
+num_generations: 8 # GRPO 采样数量，显存够可以开大到 16
+num_train_epochs: 1
+per_device_eval_batch_size: 4 # 如果 OOM，调小这个
+per_device_train_batch_size: 2 # 如果 OOM，调小这个 (2 * 8 accum = 16 global batch)
+
+loss_type: grpo
+num_iterations: 1 # GRPO 每个 batch 更新几次策略，默认 1
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr_rate: 0.1
+
+log_completions: true
+log_level: info
+logging_first_step: true
+logging_steps: 1
+logging_strategy: steps
+
+push_to_hub: false
+report_to:
+- wandb
+
+save_strategy: "steps"
+save_steps: 50
+seed: 42
+# Code 生成通常温度要低，但 RL 探索阶段需要一点温度，0.6-0.8 比较合适
+temperature: 0.7 
+top_p: 0.95
+top_k: 50
+use_liger_kernel: true
+warmup_ratio: 0.05
+
+# ============================================================
+# Reward Functions (最核心修改)
+# ============================================================
+# 这里我们要启用刚刚注册的 code_graph 和 OpenR1 自带的 format 奖励
+reward_funcs:
+- code_graph # <--- 这里就是我在 rewards.py 里帮你注册的那个 Key
+- format     # 确保 <think> 标签闭合
+
+# 权重控制 (如果你没有在代码里硬编码，或者想在这里微调)
+# 注意：你的 code_graph 返回的是 total_reward，所以这里权重给 1.0 即可
+reward_weights:
+- 1.0 
+- 0.1 # format 稍微给点约束就行
+
+# 下面这些原本的 graph 参数可以注释掉，因为你的 code_graph_reward_func 已经把它们封装在内部了
+# graph_reward_funcs: ...
+# graph_reward_weights: ...

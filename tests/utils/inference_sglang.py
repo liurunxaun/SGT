@@ -62,6 +62,8 @@ async def process_single_row(
     async with semaphore:
         raw_output_text = await generate_sglang(client, messages, temperature, max_tokens)
 
+    # print(f"[Row {index}] SGLang Response: {raw_output_text}")
+
     # 3. 解析结果
         # SGLang 返回的是 text，直接用字符串分割，逻辑等同于原代码找 token id
         # 查找 </think>
@@ -102,42 +104,48 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
         SGLANG_BASE_URL = "http://localhost:30004/v1"
     elif model == "qwen3-4B-RL":
         SGLANG_BASE_URL = "http://localhost:30005/v1"
+    elif model == "qwen3-8B-Base":
+        SGLANG_BASE_URL = "http://localhost:30006/v1"
 
-    if model == "qwen3-8B-SFT-checkpoint90":
-        SGLANG_BASE_URL = "http://localhost:30010/v1"
-    elif model == "qwen3-8B-SFT-checkpoint105":
-        SGLANG_BASE_URL = "http://localhost:30011/v1"
-    elif model == "qwen3-8B-SFT-checkpoint120":
-        SGLANG_BASE_URL = "http://localhost:30012/v1"
-    elif model == "qwen3-8B-SFT-checkpoint135":
-        SGLANG_BASE_URL = "http://localhost:30013/v1"
-    elif model == "qwen3-8B-SFT-checkpoint150":
-        SGLANG_BASE_URL = "http://localhost:30014/v1"
+    # if model == "qwen3-8B-SFT-checkpoint90":
+    #     SGLANG_BASE_URL = "http://localhost:30010/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint105":
+    #     SGLANG_BASE_URL = "http://localhost:30011/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint120":
+    #     SGLANG_BASE_URL = "http://localhost:30012/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint135":
+    #     SGLANG_BASE_URL = "http://localhost:30013/v1"
+    # elif model == "qwen3-8B-SFT-checkpoint150":
+    #     SGLANG_BASE_URL = "http://localhost:30014/v1"
 
-    if model == "qwen3-8B-RL-20251201-0000-checkpoint-100":
-        SGLANG_BASE_URL = "http://localhost:30020/v1"
+    # if model == "qwen3-8B-RL-20251201-0000-checkpoint-100":
+    #     SGLANG_BASE_URL = "http://localhost:30020/v1"
 
-    if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300":
-        SGLANG_BASE_URL = "http://localhost:30030/v1"
-    elif model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
-        SGLANG_BASE_URL = "http://localhost:30031/v1"
+    # if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300":
+    #     SGLANG_BASE_URL = "http://localhost:30030/v1"
+    # elif model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
+    #     SGLANG_BASE_URL = "http://localhost:30031/v1"
     
-    if model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-15":
-        SGLANG_BASE_URL = "http://localhost:30040/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-30":
-        SGLANG_BASE_URL = "http://localhost:30041/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-45":
-        SGLANG_BASE_URL = "http://localhost:30042/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-60":
-        SGLANG_BASE_URL = "http://localhost:30043/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-75":
-        SGLANG_BASE_URL = "http://localhost:30044/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-90":
-        SGLANG_BASE_URL = "http://localhost:30045/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-105":
-        SGLANG_BASE_URL = "http://localhost:30046/v1"
-    elif model=="qwen3-8B-Base-SFT-All-Data-1207-1200-checkpoint-120":
-        SGLANG_BASE_URL = "http://localhost:30047/v1"
+    # if model == "qwen3-8B-Base-SFT-All-Data-1208-1700-checkpoint-59":
+    #     SGLANG_BASE_URL = "http://localhost:30040/v1"
+
+    # if model == "qwen3-8B-Base-SFT-All-Data-1208-2230":
+    #     SGLANG_BASE_URL = "http://localhost:30050/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-15":
+    #      SGLANG_BASE_URL = "http://localhost:30051/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-30":
+    #      SGLANG_BASE_URL = "http://localhost:30052/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-45":
+    #      SGLANG_BASE_URL = "http://localhost:30053/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-60":
+    #      SGLANG_BASE_URL = "http://localhost:30054/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-75":
+    #      SGLANG_BASE_URL = "http://localhost:30055/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-90":
+    #      SGLANG_BASE_URL = "http://localhost:30056/v1"
+    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-105":
+    #      SGLANG_BASE_URL = "http://localhost:30057/v1"
+    
 
     SGLANG_API_KEY = "sglang"  # 本地服务通常只需占位符
     CONCURRENCY = 64 # 并发控制：控制发送给SGLang的请求数量
@@ -149,7 +157,6 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     print()
 
     # 初始化 OpenAI Client 和 信号量
-  
     client = AsyncOpenAI(base_url=SGLANG_BASE_URL, api_key=SGLANG_API_KEY)
     semaphore = asyncio.Semaphore(CONCURRENCY)
     loop = asyncio.get_running_loop()
@@ -171,7 +178,6 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
     # 排序（因为异步完成顺序不确定）
     results.sort(key=lambda x: x['id'])
 
-    # 保存结果 (保留原逻辑)
 # 保存结果
     df_results = pd.DataFrame(results)
     

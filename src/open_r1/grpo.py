@@ -36,14 +36,14 @@ class GRPOCustomTrainer(GRPOTrainer):
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
         # 1. 保存训练时的设置 (比如 12)
         original_generations = self.num_generations
-        
+
         # 2. 强制改为 1，让评估只生成一条
         #    这会同时影响 Sampler(采样器) 和 vLLM Generation(生成数量)
-        self.num_generations = 1 
-        
+        self.num_generations = 1
+
         # 3. 清空 DataLoader 缓存！
         #    如果不清空，Trainer 可能会直接复用之前包含 "重复12次" 逻辑的旧 DataLoader
-        if hasattr(self, "_eval_dataloaders"): 
+        if hasattr(self, "_eval_dataloaders"):
             self._eval_dataloaders = {}
 
         try:
@@ -52,9 +52,9 @@ class GRPOCustomTrainer(GRPOTrainer):
         finally:
             # 5. 【关键】恢复现场，确保不影响后续训练
             self.num_generations = original_generations
-            
+
             # 再次清空缓存，确保下次训练或评估重新构建正确的 Sampler
-            if hasattr(self, "_eval_dataloaders"): 
+            if hasattr(self, "_eval_dataloaders"):
                 self._eval_dataloaders = {}
 
 
@@ -129,12 +129,100 @@ def main(script_args, training_args, model_args):
         prompt.append({"role": "user", "content": example[prompt_column]})
         return {"prompt": prompt}
 
+    # 先统一做 map（Dataset / DatasetDict 都支持）
     dataset = dataset.map(make_conversation)
 
-    for split in dataset:
-        if "messages" in dataset[split].column_names:
-            dataset[split] = dataset[split].remove_columns("messages")
+    # 兼容 DatasetDict 和 单个 Dataset 两种情况，去掉 messages 列
+    if isinstance(dataset, datasets.DatasetDict):
+        for split_name in dataset:
+            if "messages" in dataset[split_name].column_names:
+                dataset[split_name] = dataset[split_name].remove_columns("messages")
+    elif isinstance(dataset, datasets.Dataset):
+        if "messages" in dataset.column_names:
+            dataset = dataset.remove_columns("messages")
+    else:
+        raise ValueError(f"Unexpected dataset type: {type(dataset)}")
 
+    #############################
+    # 准备 train_dataset / eval_dataset
+    #############################
+    train_dataset = None
+    eval_dataset = None
+
+    need_eval = training_args.do_eval and str(getattr(training_args, "eval_strategy", "no")) != "no"
+
+    # 情况 1：多表 DatasetDict（原来就能跑的 RL 数据集）
+    if isinstance(dataset, datasets.DatasetDict):
+        if script_args.dataset_train_split not in dataset:
+            raise ValueError(
+                f"Train split '{script_args.dataset_train_split}' not found in dataset. "
+                f"Available splits: {list(dataset.keys())}"
+            )
+
+        # 先拿到 train split
+        train_dataset = dataset[script_args.dataset_train_split]
+
+        if need_eval:
+            # 优先用用户指定的 test split
+            if script_args.dataset_test_split in dataset:
+                eval_dataset = dataset[script_args.dataset_test_split]
+            else:
+                # 没有 test split：从 train 里自动切一部分做 eval
+                if len(train_dataset) < 2:
+                    logger.warning(
+                        "DatasetDict 只有一个 train split 且样本数过少，无法切分 eval，"
+                        "将强制关闭 evaluation_strategy/do_eval。"
+                    )
+                    eval_dataset = None
+                    training_args.eval_strategy = "no"
+                    training_args.do_eval = False
+                    need_eval = False
+                else:
+                    split_ratio = 0.02  # 2% 做 eval，你可以视情况改大点
+                    tmp_split = train_dataset.train_test_split(
+                        test_size=split_ratio, seed=training_args.seed
+                    )
+                    train_dataset = tmp_split["train"]
+                    eval_dataset = tmp_split["test"]
+                    logger.warning(
+                        f"DatasetDict 中没有 '{script_args.dataset_test_split}'，"
+                        f"自动从 train 切出 {split_ratio*100:.1f}% 样本作为 eval "
+                        f"({len(eval_dataset)} 条)。"
+                    )
+        else:
+            eval_dataset = None
+
+    # 情况 2：单表 Dataset（比如 KodCode-Light-RL-10K）
+    elif isinstance(dataset, datasets.Dataset):
+        if need_eval:
+            if len(dataset) < 2:
+                logger.warning(
+                    "单表 Dataset 样本数过少，无法切分 eval，"
+                    "将强制关闭 evaluation_strategy/do_eval。"
+                )
+                train_dataset = dataset
+                eval_dataset = None
+                training_args.eval_strategy = "no"
+                training_args.do_eval = False
+                need_eval = False
+            else:
+                split_ratio = 0.02  # 2% 做 eval，你可以视情况改
+                tmp_split = dataset.train_test_split(
+                    test_size=split_ratio, seed=training_args.seed
+                )
+                train_dataset = tmp_split["train"]
+                eval_dataset = tmp_split["test"]
+                logger.warning(
+                    f"检测到单表 Dataset，且 eval_strategy!=no，"
+                    f"自动从全量数据切出 {split_ratio*100:.1f}% 样本作为 eval "
+                    f"({len(eval_dataset)} 条)。"
+                )
+        else:
+            train_dataset = dataset
+            eval_dataset = None
+
+    else:
+        raise ValueError(f"Unexpected dataset type when building train/eval: {type(dataset)}")
 
     #############################
     # Initialize the GRPO trainer
@@ -144,8 +232,8 @@ def main(script_args, training_args, model_args):
         model=model,
         reward_funcs=reward_funcs,
         args=training_args,
-        train_dataset=dataset[script_args.dataset_train_split],
-        eval_dataset=(dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None),
+        train_dataset=train_dataset,
+        eval_dataset=(eval_dataset if need_eval else None),
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
@@ -162,7 +250,7 @@ def main(script_args, training_args, model_args):
         checkpoint = last_checkpoint
     train_result = trainer.train(resume_from_checkpoint=checkpoint)
     metrics = train_result.metrics
-    metrics["train_samples"] = len(dataset[script_args.dataset_train_split])
+    metrics["train_samples"] = len(train_dataset)
     trainer.log_metrics("train", metrics)
     trainer.save_metrics("train", metrics)
     trainer.save_state()
@@ -191,12 +279,14 @@ def main(script_args, training_args, model_args):
     ##########
     # Evaluate
     ##########
-    if training_args.do_eval:
+    if training_args.do_eval and eval_dataset is not None:
         logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(dataset[script_args.dataset_test_split])
+        metrics["eval_samples"] = len(eval_dataset)
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
+    elif training_args.do_eval and eval_dataset is None and trainer.accelerator.is_main_process:
+        logger.warning("do_eval=True 但没有可用的 eval_dataset，已在上游强制关闭 eval。")
 
     #############
     # push to hub
