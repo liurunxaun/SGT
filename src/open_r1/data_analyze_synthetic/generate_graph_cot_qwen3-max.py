@@ -26,7 +26,7 @@ INPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/split_files/train_part_1_
 OUTPUT_BASE = INPUT_FILE.replace(".parquet", "_qwen3-max_graph_results")
 
 # 生成模型配置
-GEN_API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6" # ⚠️ 请在此处填入你的 API Key
+GEN_API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
 GEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 GEN_MODEL_NAME = "qwen3-max" 
 
@@ -40,6 +40,9 @@ MAX_ATTEMPTS = 2
 MAX_CONCURRENCY = 50 
 MAX_TOKENS = 32768 
 REQUEST_TIMEOUT = 1200.0 
+
+# --- 增量保存参数 ---
+SAVE_INTERVAL = 1000  # 每处理 1000 条保存一次
 
 # ================= 3. 定义图结构推理的 System Prompt =================
 GRAPH_SYSTEM_PROMPT = r"""
@@ -261,31 +264,6 @@ response:
 
 judge_executor = ThreadPoolExecutor(max_workers=32) 
 
-def extract_last_boxed_content(text):
-    """提取 \boxed{...}。如果失败返回 None。"""
-    if not text: return None
-    idx = text.rfind("\\boxed{")
-    if idx == -1:
-        return None 
-
-    content_start = idx + 7 
-    balance = 0
-    content_end = -1
-    
-    for i in range(content_start, len(text)):
-        char = text[i]
-        if char == '{':
-            balance += 1
-        elif char == '}':
-            if balance == 0:
-                content_end = i
-                break
-            balance -= 1
-            
-    if content_end != -1:
-        return text[content_start:content_end]
-    return None
-
 def run_judge_sync(predicted, ground_truth):
     """同步评测函数"""
     try:
@@ -346,7 +324,6 @@ async def get_qwen_response_async(client, prompt):
         choice = response.choices[0]
         
         if choice.finish_reason == "length":
-            # 返回空内容以表示失败，同时传递错误信息
             return "", "", "", "LENGTH_EXCEEDED"
 
         full_content = choice.message.content if choice.message.content else ""
@@ -354,7 +331,6 @@ async def get_qwen_response_async(client, prompt):
         # 解析图结构推理内容和答案
         reasoning, answer = parse_model_output(full_content)
         
-        # 💡 修改点 1：返回 (reasoning, answer, full_content, error)
         return reasoning, answer, full_content, None
 
     except RateLimitError:
@@ -377,7 +353,6 @@ async def process_single_problem(sem, client, idx, row):
             
             # --- API 生成 ---
             while True:
-                # 💡 修改点 2：解包 4 个返回值
                 reasoning, answer, full_content, error = await get_qwen_response_async(client, problem_text)
                 
                 if error == "RATE_LIMIT":
@@ -389,27 +364,23 @@ async def process_single_problem(sem, client, idx, row):
                     continue
                 elif error:
                     reasoning = f"[API Error] {error}"
-                    full_content = f"[API Error] {error}" # 出错时 Full Content 也记录错误
+                    full_content = f"[API Error] {error}"
                     break
                 else:
                     break 
 
             # --- 判题准备 ---
             judge_input = None
-            extracted_boxed = None
             judge_type = "fail"
             
             if not error:
-                # 尝试从 answer 标签的内容中提取 boxed
-                extracted_boxed = extract_last_boxed_content(answer)
-                
-                if extracted_boxed:
-                    judge_input = extracted_boxed
-                    judge_type = "boxed"
+                # 直接使用 answer 标签内的内容作为判题输入
+                if answer:
+                    judge_input = answer
+                    judge_type = "answer_tag"
                 else:
-                    # 如果没有 boxed，使用 answer 标签内的全部文本
-                    judge_input = answer 
-                    judge_type = "full_text"
+                    judge_input = full_content  # 如果没有answer标签，使用全部内容
+                    judge_type = "full_content"
             
             # --- 执行判题 ---
             if judge_input:
@@ -428,12 +399,11 @@ async def process_single_problem(sem, client, idx, row):
                 "problem": problem_text,
                 "ground_truth": ground_truth,
                 "attempt": attempt,
-                "qwen_reasoning": reasoning,       # <think> 内容
-                "qwen_answer": answer,             # <answer> 内容
-                "extracted_boxed": extracted_boxed, 
+                "qwen_reasoning": reasoning,
+                "qwen_answer": answer,
                 "judge_input_type": judge_type,
                 "is_correct": is_correct,
-                "graph_structured_reasoning": full_content, # 💡 修改点 3：完整原始内容
+                "graph_structured_reasoning": full_content,
             }
             problem_results.append(record)
 
@@ -441,6 +411,24 @@ async def process_single_problem(sem, client, idx, row):
                 break
         
         return problem_results
+
+def save_incremental_results(all_results, output_base, is_final=False):
+    """增量保存结果到 Parquet 文件"""
+    if not all_results:
+        return
+    
+    df_res = pd.DataFrame(all_results).sort_values(by=['id', 'attempt'])
+    
+    # 保存所有记录
+    all_file = output_base + "_all.parquet"
+    print(f"{'[最终保存]' if is_final else '[增量保存]'} 所有记录 ({len(df_res)} 条) -> {all_file}")
+    df_res.to_parquet(all_file, index=False)
+    
+    # 保存正确记录
+    df_correct = df_res[df_res['is_correct'] == True]
+    correct_file = output_base + "_correct.parquet"
+    print(f"{'[最终保存]' if is_final else '[增量保存]'} 正确记录 ({len(df_correct)} 条) -> {correct_file}")
+    df_correct.to_parquet(correct_file, index=False)
 
 async def main():
     limits = httpx.Limits(max_keepalive_connections=MAX_CONCURRENCY + 50, max_connections=MAX_CONCURRENCY + 100)
@@ -461,64 +449,68 @@ async def main():
     print("="*60)
     print(f"🚀 图结构推理生成 | 模型: {GEN_MODEL_NAME} | 并发: {MAX_CONCURRENCY}")
     print(f"模式: Prompt引导结构化CoT + 本地LLM Judge")
+    print(f"💾 增量保存: 每 {SAVE_INTERVAL} 条保存一次")
     print("="*60)
 
+    # 创建任务列表
     tasks = [process_single_problem(sem, client, idx, row) for idx, row in df.iterrows()]
     
     start_time = time.time()
-    results_nested = await tqdm_asyncio.gather(*tasks)
-    all_results = [item for sublist in results_nested for item in sublist]
+    all_results = []
+    completed_count = 0
+    
+    # 使用 tqdm 包装的 gather，并逐个处理完成的任务
+    for coro in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
+        result = await coro
+        all_results.extend(result)
+        completed_count += len(result) // MAX_ATTEMPTS  # 每个问题最多 MAX_ATTEMPTS 次尝试
+        
+        # 每处理 SAVE_INTERVAL 条就保存一次
+        if completed_count % SAVE_INTERVAL == 0 and completed_count > 0:
+            save_incremental_results(all_results, OUTPUT_BASE, is_final=False)
+    
     elapsed = time.time() - start_time
 
     if not all_results:
         print("没有结果生成，程序结束。")
         return
     
-    # 保存所有结果和正确结果
+    # 最终保存
+    print("\n" + "="*60)
+    print("处理完成，执行最终保存...")
+    print("="*60)
+    
     df_res = pd.DataFrame(all_results).sort_values(by=['id', 'attempt'])
     
+    # 保存所有结果和正确结果
     print(f"正在保存所有记录 ({len(df_res)} 条)...")
-    df_res.to_excel(OUTPUT_BASE + "_all.xlsx", index=False)
+    df_res.to_parquet(OUTPUT_BASE + "_all.parquet", index=False)
     
     df_correct = df_res[df_res['is_correct'] == True]
-    df_correct.to_excel(OUTPUT_BASE + "_correct.xlsx", index=False)
+    df_correct.to_parquet(OUTPUT_BASE + "_correct.parquet", index=False)
     
     # 保存未解决问题
-    
-    # 1. 找出所有成功解决 (is_correct=True) 的问题的 ID
     solved_ids = df_correct['id'].unique()
-    
-    # 2. 找出所有问题的 ID
-    df['id'] = df.index # 确保原始数据有 ID 列用于筛选
+    df['id'] = df.index
     all_ids = df['id'].tolist()
-    
-    # 3. 计算未解决问题的 ID 集合
     unsolved_ids = set(all_ids) - set(solved_ids)
     
-    # 4. 从完整结果中筛选出未解决问题的最后一次尝试
     df_unsolved_last_attempts = []
     
     for problem_id in unsolved_ids:
-        # 找到该 ID 对应的所有记录，并取最后一次尝试（即 attempt == MAX_ATTEMPTS）
         last_attempt = df_res[
             (df_res['id'] == problem_id) & (df_res['attempt'] == MAX_ATTEMPTS)
         ]
         
         if not last_attempt.empty:
             record = last_attempt.iloc[0]
-            
-            # 从原始 df 中获取 'solution' 列
-            # 原始 df 在这里被称为 df_base
             original_row = df[df['id'] == problem_id].iloc[0] 
 
             df_unsolved_last_attempts.append({
                 "problem_id": record['id'],
                 "problem": record['problem'],
-                # 使用原始数据集中的 'solution' (详细步骤)
                 "original_solution": original_row['solution'], 
-                # 使用原始数据集中的 'answer' (最终答案)
                 "original_answer": original_row['answer'],
-                # 模型在失败时的答案
                 "qwen_last_answer": record['qwen_answer'],
                 "qwen_last_reasoning": record['qwen_reasoning'],
                 "last_attempt_correct": record['is_correct'], 
@@ -528,7 +520,6 @@ async def main():
     if df_unsolved_last_attempts:
         df_unsolved = pd.DataFrame(df_unsolved_last_attempts)
         
-        # 筛选您需要的最终列：problem, solution, answer
         final_cols = ['problem_id', 'problem', 'original_solution', 'original_answer', 'qwen_last_answer', 'failure_type']
         df_unsolved_final = df_unsolved[final_cols].rename(columns={
             'original_solution': 'ground_truth_solution',
@@ -537,11 +528,11 @@ async def main():
             'failure_type': 'failure_type'
         })
         
-        UNSOLVED_FILE = OUTPUT_BASE + "_unsolved.xlsx"
+        UNSOLVED_FILE = OUTPUT_BASE + "_unsolved.parquet"
         print(f"正在保存未解决问题 ({len(df_unsolved_final)} 条) 到 {UNSOLVED_FILE}...")
-        df_unsolved_final.to_excel(UNSOLVED_FILE, index=False)
+        df_unsolved_final.to_parquet(UNSOLVED_FILE, index=False)
     else:
-        print("恭喜！所有问题都在尝试次数内解决。未生成 _unsolved.xlsx 文件。")
+        print("恭喜！所有问题都在尝试次数内解决。未生成 _unsolved.parquet 文件。")
 
     # 最终统计
     uniq_correct = len(df_correct['id'].unique())
