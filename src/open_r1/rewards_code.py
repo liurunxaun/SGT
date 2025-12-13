@@ -1,81 +1,154 @@
-import re
-import multiprocessing
+import re, ast, json, sys, subprocess, tempfile, multiprocessing
+
 
 # ============================================================
 # Part 1: 代码执行与部分分 (Multiprocessing Safe)
 # ============================================================
 
-def _worker_exec(code, test_script, return_dict):
+def _parse_kodcode_test(test_obj):
     """
-    独立进程中的测试执行器，支持部分分 (Partial Credit)
+    判定 KodCode test 形式：
+    - pytest/assert 脚本：返回 ("pytest", test_script_str)
+    - stdio 字典/字典字符串：返回 ("stdio", {"stdin":[...], "stdout":[...]})
+    """
+    # 已经是 dict 且有 stdin/stdout
+    if isinstance(test_obj, dict) and "stdin" in test_obj and "stdout" in test_obj:
+        return "stdio", test_obj
+
+    # 是字符串：可能是 pytest 脚本，也可能是 "{'stdin':..., 'stdout':...}" 的字典字符串
+    if isinstance(test_obj, str):
+        s = test_obj.strip()
+
+        # 尝试识别 stdio 的字典字符串
+        if s.startswith("{") and (("'stdin'" in s) or ('"stdin"' in s)) and (("'stdout'" in s) or ('"stdout"' in s)):
+            try:
+                d = ast.literal_eval(s)  # 兼容单引号 dict 字符串（安全）
+            except Exception:
+                try:
+                    d = json.loads(s)     # 兼容 JSON
+                except Exception:
+                    d = None
+
+            if isinstance(d, dict) and "stdin" in d and "stdout" in d:
+                return "stdio", d
+
+        # 否则当 pytest/assert 脚本
+        return "pytest", test_obj
+
+    return "none", None
+
+
+def _run_pytest_like(code: str, test_script: str) -> float:
+    env = {}
+
+    # 清洗测试脚本：去掉 from solution import ...
+    test_script_clean = re.sub(
+        r"^from solution import .*$", "", test_script, flags=re.MULTILINE
+    )
+    # 有些脚本还会写 solution.xxx，顺手去掉
+    test_script_clean = re.sub(r"\bsolution\.", "", test_script_clean)
+
+    exec(code, env, env)
+    exec(test_script_clean, env, env)
+
+    test_funcs = [
+        v for k, v in env.items()
+        if k.startswith("test_") and callable(v)
+    ]
+
+    passed_count = 0
+    total_tests = 0
+
+    if test_funcs:
+        total_tests = len(test_funcs)
+        for tf in test_funcs:
+            try:
+                tf()
+                passed_count += 1
+            except Exception:
+                pass
+    else:
+        # 兼容：脚本里直接 assert
+        total_tests = 1
+        passed_count = 1
+
+    return passed_count / total_tests if total_tests > 0 else 0.0
+
+
+def _normalize_out(s: str) -> str:
+    # 忽略末尾空白/多余换行，适配 OJ 常见判题
+    return "\n".join(line.rstrip() for line in s.strip().splitlines()).strip()
+
+
+def _run_stdio_like(code: str, io_dict: dict, per_case_timeout: float = 2.0) -> float:
+    ins = io_dict.get("stdin", [])
+    outs = io_dict.get("stdout", [])
+    total = min(len(ins), len(outs))
+    if total == 0:
+        return 0.0
+
+    passed = 0
+
+    # 写临时文件执行（更稳）
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+        f.write(code)
+        path = f.name
+
+    for i in range(total):
+        try:
+            proc = subprocess.run(
+                [sys.executable, path],
+                input=ins[i],
+                text=True,
+                capture_output=True,
+                timeout=per_case_timeout,
+            )
+            pred = _normalize_out(proc.stdout)
+            gold = _normalize_out(str(outs[i]))
+
+            if proc.returncode == 0 and pred == gold:
+                passed += 1
+        except Exception:
+            pass
+
+    return passed / total
+
+
+def _worker_exec(code, test_obj, return_dict, per_case_timeout=2.0):
+    """
+    独立进程中的测试执行器：同时支持
+    - pytest/assert 脚本
+    - stdio (stdin/stdout) 字典
     """
     try:
-        # 用一个 env 同时作为 globals / locals
-        env = {}
-
-        # 1. 清洗测试脚本 (比如去掉 KodCode 里的 `from solution import ...` 之类)
-        test_script_clean = re.sub(
-            r"^from solution import .*$", "", test_script, flags=re.MULTILINE
-        )
-
-        # 2. 执行用户代码（定义 increment_list / sortStack 等函数）
-        exec(code, env, env)
-
-        # 3. 执行测试定义（定义 test_xxx，并调用上面的函数）
-        exec(test_script_clean, env, env)
-
-        # 4. 查找并运行测试用例
-        # 策略：优先找 test_ 开头的函数，如果没有，则认为脚本全是 assert
-        test_funcs = [
-            v for k, v in env.items()
-            if k.startswith("test_") and callable(v)
-        ]
-
-        passed_count = 0
-        total_tests = 0
-
-        if test_funcs:
-            total_tests = len(test_funcs)
-            for tf in test_funcs:
-                try:
-                    tf()   # 运行单个测试函数
-                    passed_count += 1
-                except Exception:
-                    # 某个测试挂了就算这个用例没通过，但继续下一个
-                    pass
-        else:
-            # 兼容「直接在脚本里写 assert」的情况：
-            # 能跑到这里说明所有 assert 都没炸，就直接给 1 分。
-            total_tests = 1
-            passed_count = 1
-
-        if total_tests > 0:
-            return_dict["score"] = passed_count / total_tests
+        kind, parsed = _parse_kodcode_test(test_obj)
+        if kind == "pytest":
+            return_dict["score"] = _run_pytest_like(code, parsed)
+        elif kind == "stdio":
+            return_dict["score"] = _run_stdio_like(code, parsed, per_case_timeout=per_case_timeout)
         else:
             return_dict["score"] = 0.0
-
     except Exception:
-        # 语法错误 / 运行时错误
         return_dict["score"] = 0.0
 
 
-def execute_kodcode_safe(code_snippet, test_script, timeout=2.0):
+def execute_kodcode_safe(code_snippet, test_obj, timeout=4.0, per_case_timeout=2.0):
     """
     多进程安全入口：在独立进程里跑用户代码 + 测试，防止死循环/阻塞。
+    timeout: 整体超时
+    per_case_timeout: stdio 每个用例的超时
     """
     manager = multiprocessing.Manager()
-    return_dict = manager.dict()
-    return_dict["score"] = 0.0
+    return_dict = manager.dict(score=0.0)
 
     p = multiprocessing.Process(
         target=_worker_exec,
-        args=(code_snippet, test_script, return_dict),
+        args=(code_snippet, test_obj, return_dict, per_case_timeout),
     )
     p.start()
     p.join(timeout)
 
     if p.is_alive():
-        # 超时，杀掉子进程
         p.terminate()
         p.join()
         return 0.0

@@ -41,10 +41,10 @@ MAX_ATTEMPTS = 2
 MAX_CONCURRENCY = 200 
 
 # 【最大输出】
-MAX_TOKENS = 60000
+MAX_TOKENS = 32768
 
 # 【超时 20分钟】防止长思考因为网络波动断连
-REQUEST_TIMEOUT = 1200.0 
+REQUEST_TIMEOUT = 1200.0
 # ===========================================
 
 judge_executor = ThreadPoolExecutor(max_workers=32) # 稍微调大一点判题线程池
