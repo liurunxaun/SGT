@@ -8,6 +8,7 @@ import re
 from openai import AsyncOpenAI, APIConnectionError, RateLimitError, APITimeoutError 
 from tqdm.asyncio import tqdm_asyncio
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 # ================= 1. 导入本地评测模块 =================
 JUDGE_PATH = "/data/home/the/rxliu/projects/open-r1-main/tests/utils"
@@ -22,8 +23,12 @@ except ImportError:
     exit(1)
 
 # ================= 2. 配置区域 =================
-INPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/split_files/train_part_1_of_4.parquet"
-OUTPUT_BASE = INPUT_FILE.replace(".parquet", "_qwen3-max_graph_results")
+# 要处理的文件列表
+INPUT_FILES = [
+    "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/split_files/train_part_2_of_4.parquet",
+    "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/split_files/train_part_3_of_4.parquet",
+    "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/split_files/train_part_4_of_4.parquet",
+]
 
 # 生成模型配置
 GEN_API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
@@ -42,7 +47,7 @@ MAX_TOKENS = 32768
 REQUEST_TIMEOUT = 1200.0 
 
 # --- 增量保存参数 ---
-SAVE_INTERVAL = 1000  # 每处理 1000 条保存一次
+SAVE_INTERVAL = 1000  # 每处理 x 条保存一次
 
 # ================= 3. 定义图结构推理的 System Prompt =================
 GRAPH_SYSTEM_PROMPT = r"""
@@ -280,26 +285,19 @@ def run_judge_sync(predicted, ground_truth):
         return False
 
 def parse_model_output(text):
-    """
-    解析模型输出，分离 <think> 和 <answer> 标签内容
-    """
+    """解析模型输出，分离 <think> 和 <answer> 标签内容"""
     if not text:
         return "", ""
     
-    # 提取 <think> 块
     think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
     think_content = think_match.group(1).strip() if think_match else ""
     
-    # 提取 <answer> 块
     answer_match = re.search(r'<answer>(.*?)</answer>', text, re.DOTALL)
     answer_content = answer_match.group(1).strip() if answer_match else ""
     
-    # 兜底：如果没找到 answer 标签，尝试看是否整个文本就是答案，或者 answer 在 think 之后
     if not answer_content and not think_content:
-        # 假设没有遵循格式，整个内容作为答案
         answer_content = text
     elif not answer_content and think_content:
-        # 有 think 但没有 answer 标签，尝试取 think 之后的内容
         parts = text.split('</think>')
         if len(parts) > 1:
             answer_content = parts[1].strip()
@@ -307,7 +305,6 @@ def parse_model_output(text):
     return think_content, answer_content
 
 async def get_qwen_response_async(client, prompt):
-    # 构造包含 System Prompt 的消息列表
     messages = [
         {"role": "system", "content": GRAPH_SYSTEM_PROMPT},
         {"role": "user", "content": f"Question: {prompt}"}
@@ -327,8 +324,6 @@ async def get_qwen_response_async(client, prompt):
             return "", "", "", "LENGTH_EXCEEDED"
 
         full_content = choice.message.content if choice.message.content else ""
-        
-        # 解析图结构推理内容和答案
         reasoning, answer = parse_model_output(full_content)
         
         return reasoning, answer, full_content, None
@@ -351,7 +346,6 @@ async def process_single_problem(sem, client, idx, row):
         for attempt in range(1, MAX_ATTEMPTS + 1):
             retry_wait = 2
             
-            # --- API 生成 ---
             while True:
                 reasoning, answer, full_content, error = await get_qwen_response_async(client, problem_text)
                 
@@ -369,20 +363,17 @@ async def process_single_problem(sem, client, idx, row):
                 else:
                     break 
 
-            # --- 判题准备 ---
             judge_input = None
             judge_type = "fail"
             
             if not error:
-                # 直接使用 answer 标签内的内容作为判题输入
                 if answer:
                     judge_input = answer
                     judge_type = "answer_tag"
                 else:
-                    judge_input = full_content  # 如果没有answer标签，使用全部内容
+                    judge_input = full_content
                     judge_type = "full_content"
             
-            # --- 执行判题 ---
             if judge_input:
                 loop = asyncio.get_running_loop()
                 is_correct = await loop.run_in_executor(
@@ -419,80 +410,80 @@ def save_incremental_results(all_results, output_base, is_final=False):
     
     df_res = pd.DataFrame(all_results).sort_values(by=['id', 'attempt'])
     
-    # 保存所有记录
     all_file = output_base + "_all.parquet"
     print(f"{'[最终保存]' if is_final else '[增量保存]'} 所有记录 ({len(df_res)} 条) -> {all_file}")
     df_res.to_parquet(all_file, index=False)
     
-    # 保存正确记录
     df_correct = df_res[df_res['is_correct'] == True]
     correct_file = output_base + "_correct.parquet"
     print(f"{'[最终保存]' if is_final else '[增量保存]'} 正确记录 ({len(df_correct)} 条) -> {correct_file}")
     df_correct.to_parquet(correct_file, index=False)
 
-async def main():
+async def process_single_file(input_file, file_index, total_files):
+    """处理单个文件"""
+    output_base = input_file.replace(".parquet", "_qwen3-max_graph_results")
+    
+    print("\n" + "="*80)
+    print(f"📂 [{file_index}/{total_files}] 开始处理: {os.path.basename(input_file)}")
+    print(f"⏰ 开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80)
+    
     limits = httpx.Limits(max_keepalive_connections=MAX_CONCURRENCY + 50, max_connections=MAX_CONCURRENCY + 100)
     http_client = httpx.AsyncClient(limits=limits, timeout=REQUEST_TIMEOUT)
     
     client = AsyncOpenAI(api_key=GEN_API_KEY, base_url=GEN_BASE_URL, http_client=http_client)
 
-    print(f"读取文件: {INPUT_FILE}...")
     try:
-        df = pd.read_parquet(INPUT_FILE)
-        print(f"成功加载，共 {len(df)} 条数据。")
+        df = pd.read_parquet(input_file)
+        print(f"✓ 成功加载，共 {len(df)} 条数据。")
     except Exception as e:
-        print(f"读取失败: {e}")
+        print(f"❌ 读取失败: {e}")
+        await http_client.aclose()
         return
 
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     
-    print("="*60)
-    print(f"🚀 图结构推理生成 | 模型: {GEN_MODEL_NAME} | 并发: {MAX_CONCURRENCY}")
-    print(f"模式: Prompt引导结构化CoT + 本地LLM Judge")
-    print(f"💾 增量保存: 每 {SAVE_INTERVAL} 条保存一次")
-    print("="*60)
+    print(f"🚀 模型: {GEN_MODEL_NAME} | 并发: {MAX_CONCURRENCY} | 增量保存: 每 {SAVE_INTERVAL} 条")
+    print("-"*80)
 
-    # 创建任务列表
     tasks = [process_single_problem(sem, client, idx, row) for idx, row in df.iterrows()]
     
     start_time = time.time()
     all_results = []
     completed_count = 0
     
-    # 使用 tqdm 包装的 gather，并逐个处理完成的任务
-    for coro in tqdm_asyncio.as_completed(tasks, total=len(tasks)):
+    for coro in tqdm_asyncio.as_completed(tasks, total=len(tasks), desc=f"Part {file_index}"):
         result = await coro
         all_results.extend(result)
-        completed_count += len(result) // MAX_ATTEMPTS  # 每个问题最多 MAX_ATTEMPTS 次尝试
+        completed_count += 1
         
-        # 每处理 SAVE_INTERVAL 条就保存一次
-        if completed_count % SAVE_INTERVAL == 0 and completed_count > 0:
-            save_incremental_results(all_results, OUTPUT_BASE, is_final=False)
+        if completed_count % SAVE_INTERVAL == 0:
+            print(f"\n💾 已完成 {completed_count}/{len(df)} 条，触发增量保存...")
+            save_incremental_results(all_results, output_base, is_final=False)
     
     elapsed = time.time() - start_time
 
     if not all_results:
-        print("没有结果生成，程序结束。")
+        print("⚠️  没有结果生成。")
+        await http_client.aclose()
         return
     
     # 最终保存
-    print("\n" + "="*60)
-    print("处理完成，执行最终保存...")
-    print("="*60)
+    print("\n" + "="*80)
+    print("✅ 处理完成，执行最终保存...")
+    print("="*80)
     
     df_res = pd.DataFrame(all_results).sort_values(by=['id', 'attempt'])
     
-    # 保存所有结果和正确结果
     print(f"正在保存所有记录 ({len(df_res)} 条)...")
-    df_res.to_parquet(OUTPUT_BASE + "_all.parquet", index=False)
+    df_res.to_parquet(output_base + "_all.parquet", index=False)
     
     df_correct = df_res[df_res['is_correct'] == True]
-    df_correct.to_parquet(OUTPUT_BASE + "_correct.parquet", index=False)
+    df_correct.to_parquet(output_base + "_correct.parquet", index=False)
     
     # 保存未解决问题
     solved_ids = df_correct['id'].unique()
-    df['id'] = df.index
-    all_ids = df['id'].tolist()
+    all_ids = df.index.tolist()
     unsolved_ids = set(all_ids) - set(solved_ids)
     
     df_unsolved_last_attempts = []
@@ -504,17 +495,17 @@ async def main():
         
         if not last_attempt.empty:
             record = last_attempt.iloc[0]
-            original_row = df[df['id'] == problem_id].iloc[0] 
+            original_row = df.loc[problem_id]
 
             df_unsolved_last_attempts.append({
-                "problem_id": record['id'],
+                "problem_id": problem_id,
                 "problem": record['problem'],
                 "original_solution": original_row['solution'], 
                 "original_answer": original_row['answer'],
                 "qwen_last_answer": record['qwen_answer'],
                 "qwen_last_reasoning": record['qwen_reasoning'],
                 "last_attempt_correct": record['is_correct'], 
-                "failure_type": record['graph_structured_reasoning'].split('\n')[0].replace("[API Error] ", "") 
+                "failure_type": record['graph_structured_reasoning'].split('\n')[0].replace("[API Error] ", "") if isinstance(record['graph_structured_reasoning'], str) else "Unknown"
             })
 
     if df_unsolved_last_attempts:
@@ -528,19 +519,48 @@ async def main():
             'failure_type': 'failure_type'
         })
         
-        UNSOLVED_FILE = OUTPUT_BASE + "_unsolved.parquet"
+        UNSOLVED_FILE = output_base + "_unsolved.parquet"
         print(f"正在保存未解决问题 ({len(df_unsolved_final)} 条) 到 {UNSOLVED_FILE}...")
         df_unsolved_final.to_parquet(UNSOLVED_FILE, index=False)
     else:
-        print("恭喜！所有问题都在尝试次数内解决。未生成 _unsolved.parquet 文件。")
+        print("🎉 恭喜！所有问题都在尝试次数内解决。")
 
-    # 最终统计
+    # 统计
     uniq_correct = len(df_correct['id'].unique())
-    print("-" * 30)
-    print(f"耗时: {elapsed:.1f}s | 吞吐: {len(df)/elapsed:.2f} TPS")
-    print(f"准确率: {uniq_correct}/{len(df)} ({uniq_correct/len(df):.2%})")
+    print("-" * 80)
+    print(f"⏱️  耗时: {elapsed:.1f}s | 吞吐: {len(df)/elapsed:.2f} TPS")
+    print(f"📊 准确率: {uniq_correct}/{len(df)} ({uniq_correct/len(df):.2%})")
+    print(f"⏰ 结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80 + "\n")
 
     await http_client.aclose()
+
+async def main():
+    """主函数：按顺序处理所有文件"""
+    total_files = len(INPUT_FILES)
+    overall_start = time.time()
+    
+    print("\n" + "="*80)
+    print("🎯 批量处理任务开始")
+    print(f"📋 共 {total_files} 个文件待处理")
+    print(f"⏰ 总开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80)
+    
+    for idx, input_file in enumerate(INPUT_FILES, 1):
+        if not os.path.exists(input_file):
+            print(f"⚠️  跳过不存在的文件: {input_file}")
+            continue
+        
+        await process_single_file(input_file, idx, total_files)
+    
+    overall_elapsed = time.time() - overall_start
+    
+    print("\n" + "="*80)
+    print("🎊 所有文件处理完成！")
+    print(f"⏱️  总耗时: {overall_elapsed/3600:.2f} 小时")
+    print(f"⏰ 总结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80)
+    
     judge_executor.shutdown()
 
 if __name__ == "__main__":

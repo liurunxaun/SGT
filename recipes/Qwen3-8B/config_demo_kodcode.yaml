@@ -23,6 +23,7 @@ dataset_name: /ssd5/rxliu/datasets/RL-Data/kodcode_light_10k
 # 2. 确保这个列名是你的 Prompt 列名 (KodCode通常是 prompt 或 question)
 dataset_prompt_column: question
 
+
 # 3. System Prompt (核心逻辑修改)
 # 针对 Code + Graph RL，我们要引导它做三件事：思考、用图结构标签、写代码。
 system_prompt: |
