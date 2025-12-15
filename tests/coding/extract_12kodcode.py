@@ -5,10 +5,10 @@ from datasets import load_from_disk, Dataset
 # ================= 配置区域 =================
 # 1. 输入和输出路径
 INPUT_PATH = "/ssd5/rxliu/datasets/KodCode-V1-SFT-R1/train"
-OUTPUT_PATH = "/ssd5/rxliu/datasets/KodCode-V1-SFT-R1/filtered_12k"
+OUTPUT_PATH = "/ssd5/rxliu/datasets/KodCode-V1-SFT-R1/filtered_12k_test"
 
 # 2. 总目标数量
-TOTAL_SAMPLES = 12000
+TOTAL_SAMPLES = 120
 
 # 3. Style 的比例分布 (4.5 : 4.5 : 1)
 STYLE_RATIOS = {

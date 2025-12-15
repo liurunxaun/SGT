@@ -58,17 +58,16 @@ def main(script_args, training_args, model_args):
     if last_checkpoint is not None and training_args.resume_from_checkpoint is None:
         logger.info(f"Checkpoint detected, resuming training at {last_checkpoint=}.")
 
+    # wandb
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    os.environ["WANDB_NAME"] = training_args.run_name + "-" + str(local_rank)
-    # if local_rank == 0:
-    #     # 主进程：如果有 wandb 就初始化
-    #     if "wandb" in training_args.report_to:
-    #         init_wandb_training(training_args)
-            
-    # else:
-    #     # 非主进程：强制移除 "wandb"，防止 Trainer 内部再次初始化
-    #     if "wandb" in training_args.report_to:
-    #         training_args.report_to = [b for b in training_args.report_to if b != "wandb"]
+    if local_rank == 0:
+        # 主进程:如果有 wandb 就初始化
+        if "wandb" in training_args.report_to:
+            init_wandb_training(training_args)
+    else:
+        # 非主进程:强制移除 "wandb",防止 Trainer 内部再次初始化
+        if "wandb" in training_args.report_to:
+            training_args.report_to = [b for b in training_args.report_to if b != "wandb"]
 
     ######################################
     # Load dataset, tokenizer, and model #

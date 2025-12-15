@@ -12,8 +12,10 @@ BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MODEL_NAME = "qwen-max"
 
 # 输入和输出文件路径
-INPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/test_qwen3-max-preview_results_correct.xlsx"
-OUTPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/test_qwen3-max_translate_graph_reasoning.xlsx"
+# INPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/test_qwen3-max-preview_results_correct.xlsx"
+INPUT_FILE = "/ssd5/rxliu/datasets/rcmu/sampled_math_data_qwen3-max-preview_results_correct.xlsx"
+OUTPUT_FILE = "/ssd5/rxliu/datasets/rcmu/sampled_math_data_qwen3-max-preview_translate_graph_reasoning.xlsx"
+# OUTPUT_FILE = "/ssd5/rxliu/datasets/SFT-Data/DeepScaleR/test_qwen3-max_translate_graph_reasoning.xlsx"
 
 # ================= Prompt 模板 =================
 # 这里放入你完整的 System Prompt

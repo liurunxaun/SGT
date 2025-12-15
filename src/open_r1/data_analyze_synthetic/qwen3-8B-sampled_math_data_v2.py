@@ -22,12 +22,13 @@ except ImportError:
 
 # ================= 2. 配置区域 =================
 INPUT_FILE = "/ssd5/rxliu/datasets/rcmu/sampled_math_data.parquet"
-OUTPUT_BASE = INPUT_FILE.replace(".parquet", "_qwen3-max-preview_results")
+OUTPUT_BASE = INPUT_FILE.replace(".parquet", "_qwen3-8b_results")
+
 
 # 生成模型配置
 GEN_API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
 GEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-GEN_MODEL_NAME = "qwen3-max-preview"
+GEN_MODEL_NAME = "qwen3-8b"
 
 # 评测模型配置
 JUDGE_API_KEY = GEN_API_KEY 
@@ -38,11 +39,10 @@ JUDGE_MODEL_NAME = "qwen3-next-80b-a3b-instruct"
 MAX_ATTEMPTS = 1
 
 # 【并发 200】既然实测没问题，就保持高并发
-MAX_CONCURRENCY = 200
+MAX_CONCURRENCY = 200 
 
 # 【最大输出】
-MAX_TOKENS = 32768
-# MAX_TOKENS = 65536
+MAX_TOKENS = 8192
 
 # 【超时 20分钟】防止长思考因为网络波动断连
 REQUEST_TIMEOUT = 1200.0
@@ -93,8 +93,6 @@ def run_judge_sync(predicted, ground_truth):
         # print(f"Judge Error: {e}") 
         return False
 
-
-
 async def get_qwen_response_async(client, prompt):
     messages = [{"role": "user", "content": prompt}]
     
@@ -102,11 +100,11 @@ async def get_qwen_response_async(client, prompt):
         response = await client.chat.completions.create(
             model=GEN_MODEL_NAME,
             messages=messages,
-            extra_body={"enable_thinking": True},
-            stream=False, # 关流式，极速稳健
+            extra_body={"enable_thinking": False},  # 使用extra_body传递
+            # stream=False, # 关流式，极速稳健
             max_tokens=MAX_TOKENS 
         )
-        print(response)
+        # print(response)
 
         choice = response.choices[0]
         
@@ -116,7 +114,7 @@ async def get_qwen_response_async(client, prompt):
 
         message = choice.message
         answer = message.content if message.content else ""
-
+        # print(answer)
         
         reasoning = ""
         if hasattr(message, "reasoning_content") and message.reasoning_content:
@@ -217,7 +215,6 @@ async def main():
     http_client = httpx.AsyncClient(limits=limits, timeout=REQUEST_TIMEOUT)
     
     client = AsyncOpenAI(api_key=GEN_API_KEY, base_url=GEN_BASE_URL, http_client=http_client)
-
 
     print(f"读取文件: {INPUT_FILE}...")
     try:

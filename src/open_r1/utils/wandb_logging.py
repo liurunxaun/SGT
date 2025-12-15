@@ -1,6 +1,5 @@
 import os
 
-
 def init_wandb_training(training_args):
     """
     Helper function for setting up Weights & Biases logging tools.
@@ -11,3 +10,6 @@ def init_wandb_training(training_args):
         os.environ["WANDB_PROJECT"] = training_args.wandb_project
     if training_args.wandb_run_group is not None:
         os.environ["WANDB_RUN_GROUP"] = training_args.wandb_run_group
+    
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    os.environ["WANDB_NAME"] = training_args.run_name + "-" + str(local_rank)
