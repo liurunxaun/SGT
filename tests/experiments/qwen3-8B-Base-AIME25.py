@@ -16,17 +16,17 @@ import time as time_module # 导入time模块用于获取当前时间
 # ================= 参数配置 =================
 
 # 循环和结果目录参数
-REPETITIONS = 3 # <--- 新增：重复执行的次数
+REPETITIONS = 16 # <--- 新增：重复执行的次数
 
 # Sglang 推理参数
-dataset_name = "MATH500"
-dataset_path = "/ssd5/rxliu/datasets/MATH-500/test.parquet"
-query_field = "problem"
-model = "qwen3-8B-Base-SFT-DeepScaleR-1215-1100-checkpoint-80"
+dataset_name = "AIME25"
+dataset_path = "/data/home/the/rxliu/projects/dataset_information.py"
+query_field = "question"
+model = "qwen3-8B-Base"
 temperature = 0.6
-max_tokens = 8192
+max_tokens = 32000
 system_prompt = ""
-base_url = "http://localhost:30080/v1"
+
 # llm judge 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
 API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -41,7 +41,7 @@ answer_field = "answer"
 # ================= 数据处理函数 (保持不变) =================
 
 def process_ground_truth(text):
-
+    
     return text
 
 
@@ -95,7 +95,7 @@ def main():
         # 2. sglang 推理
         print(f"开始第 {i} 次 SGLang 推理...")
         try:
-            inference_sglang(dataset_path, system_prompt, query_field, answer_field, inference_output_path, model, temperature, max_tokens,base_url)
+            inference_sglang(dataset_path, system_prompt, query_field, answer_field, inference_output_path, model, temperature, max_tokens)
         except Exception as e:
             print(f"🚨 第 {i} 次推理失败: {e}")
             continue

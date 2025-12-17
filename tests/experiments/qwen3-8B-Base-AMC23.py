@@ -16,7 +16,7 @@ import time as time_module # 导入time模块用于获取当前时间
 # ================= 参数配置 =================
 
 # 循环和结果目录参数
-REPETITIONS = 3 # <--- 新增：重复执行的次数
+REPETITIONS = 16 # <--- 新增：重复执行的次数
 
 # Sglang 推理参数
 dataset_name = "AMC23"
@@ -24,7 +24,7 @@ dataset_path = "/ssd5/rxliu/datasets/AMC23/data/test-00000-of-00001.parquet"
 query_field = "question"
 model = "qwen3-8B-Base"
 temperature = 0.6
-max_tokens = 8192
+max_tokens = 32000
 system_prompt = ""
 
 # llm judge 配置

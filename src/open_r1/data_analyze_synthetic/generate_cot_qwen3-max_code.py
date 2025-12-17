@@ -19,9 +19,9 @@ import numpy as np
 from prompts import get_system_prompt, construct_user_prompt
 
 # ================= 配置区域 =================
-INPUT_PATH = "/ssd5/rxliu/datasets/KodCode-V1-SFT-R1/filtered_12k_test"
-SUCCESS_OUTPUT_FILE = "/ssd5/rxliu/datasets/KodCode-SFT/kodcode_success_sft_test.jsonl" 
-FALLBACK_OUTPUT_FILE = "/ssd5/rxliu/datasets/KodCode-SFT/kodcode_fallback_sft_test.jsonl" 
+INPUT_PATH = "/ssd5/rxliu/datasets/KodCode-V1-SFT-R1/filtered_12k"
+SUCCESS_OUTPUT_FILE = "/ssd5/rxliu/datasets/KodCode-SFT/kodcode_success_sft.jsonl" 
+FALLBACK_OUTPUT_FILE = "/ssd5/rxliu/datasets/KodCode-SFT/kodcode_fallback_sft.jsonl" 
 
 # API 配置 
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"  
@@ -178,28 +178,41 @@ def run_unit_tests(solution_code, test_code, timeout):
 def process_single_row(row):
     """
     修改点：
-    1. 在返回的 result_data 和 fallback_data 中增加了 'test', 'difficulty' 和 'test_info' 字段。
+    1. 增加变量追踪最后一次生成的 reasoning, solution 和 pass_rate。
+    2. 在 fallback_data 中保存 solution_incorrect, reasoning_incorrect, pass_rate。
     """
+    # 1. 类型安全转换 (防止 numpy 报错)
     row = to_python_type(row)
+    
     question = row['question']
     style = row['style']
-    test_code = row['test']  # 获取测试代码
+    test_code = row['test']
     r1_solution = row['r1_solution']
     
-    # 提取 metadata
     test_info = row.get('test_info')
-    gpt_difficulty = row.get('gpt_difficulty') 
+    gpt_difficulty = row.get('gpt_difficulty')
     
     sys_prompt = get_system_prompt(style)
-    # 将 test_info 传入用于构造 Prompt
     user_prompt = construct_user_prompt(question, style, test_info=test_info)
     
-    # --- 第一次尝试 ---
+    # === 初始化错误追踪变量 ===
+    # 用于记录最后一次模型生成的（即使是错误的）内容
+    last_generated_cot = ""
+    last_generated_sol = ""
+    last_pass_rate = 0.0
+    
+    # --- 第一次尝试 (Temp 0.5) ---
     response1 = call_qwen(user_prompt, sys_prompt, temperature=0.5, max_tokens=32768)
     cot1, ans1 = parse_response(response1)
     
     if ans1:
         passed, total, all_passed = run_tests(ans1, test_code, style=style)
+        current_pass_rate = passed / total if total > 0 else 0.0
+        
+        # 更新追踪变量 (如果第二次尝试崩溃，至少我们有第一次的结果)
+        last_generated_cot = cot1
+        last_generated_sol = ans1
+        last_pass_rate = current_pass_rate
         
         if all_passed:
             result_data = {
@@ -209,20 +222,25 @@ def process_single_row(row):
                 "pass_rate": 1.0,
                 "attempt": 1,
                 "config": "temp_0.5",
-                # 【保存所有关键元数据】
-                "test": test_code,       # 保留测试代码
+                "test": test_code,
                 "difficulty": gpt_difficulty,
-                "test_info": test_info
+                "test_info": test_info,
+                "style": style
             }
             return ("success", result_data, "Success (1st try)")
             
-    # --- 第二次尝试 ---
+    # --- 第二次尝试 (Temp 0.8) ---
     response2 = call_qwen(user_prompt, sys_prompt, temperature=0.8, max_tokens=32768)
     cot2, ans2 = parse_response(response2)
     
     if ans2:
         passed, total, all_passed = run_tests(ans2, test_code, style=style)
-        pass_rate = passed / total if total > 0 else 0
+        current_pass_rate = passed / total if total > 0 else 0.0
+        
+        # 更新追踪变量 (优先保存第二次尝试的结果，因为第二次更具探索性)
+        last_generated_cot = cot2
+        last_generated_sol = ans2
+        last_pass_rate = current_pass_rate
         
         if all_passed:
             result_data = {
@@ -232,37 +250,47 @@ def process_single_row(row):
                 "pass_rate": 1.0,
                 "attempt": 2,
                 "config": "temp_0.8",
-                # 【保存所有关键元数据】
                 "test": test_code,
                 "difficulty": gpt_difficulty,
-                "test_info": test_info
+                "test_info": test_info,
+                "style": style
             }
             return ("success", result_data, "Success (2nd try)")
         
-        elif pass_rate > 0.5:
+        elif current_pass_rate > 0.5:
             result_data = {
                 "question": question,
                 "reasoning": cot2,
                 "solution": ans2,
-                "pass_rate": pass_rate,
+                "pass_rate": current_pass_rate,
                 "attempt": 2,
                 "config": "temp_0.8_partial",
-                # 【保存所有关键元数据】
                 "test": test_code,
                 "difficulty": gpt_difficulty,
-                "test_info": test_info
+                "test_info": test_info,
+                "style": style
             }
-            return ("success", result_data, f"Success (2nd try partial {pass_rate:.2f})")
+            return ("success", result_data, f"Success (2nd try partial {current_pass_rate:.2f})")
     
     # --- 失败 (Fallback) ---
+    # 这里的 last_generated_* 变量保存了最后一次有效的模型输出
+    # 如果两次都解析失败（ans 为 None），这里会是空字符串
+    
     fallback_data = {
         "question": question,
-        "solution": r1_solution,
+        "solution": r1_solution, # 标准答案 (Ground Truth)
         "note": "Failed generation",
-        # 【保存所有关键元数据】
+        
+        # 【新增的关键分析字段】
+        "solution_incorrect": last_generated_sol,   # 模型生成的错误代码
+        "reasoning_incorrect": last_generated_cot,  # 模型生成的错误推理
+        "pass_rate": last_pass_rate,                # 当时的通过率
+        
+        # 元数据
         "test": test_code,
         "difficulty": gpt_difficulty,
-        "test_info": test_info
+        "test_info": test_info,
+        "style": style
     }
     return ("fallback", fallback_data, "Fallback")
 

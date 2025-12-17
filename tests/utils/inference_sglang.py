@@ -87,64 +87,67 @@ async def process_single_row(
     }
 
 
-async def run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens,):
+async def run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens, base_url):
     print("========begin inference========")
     print()
 
-    # 处理SGLang 配置
-    if model == "qwen3-8B":
-        SGLANG_BASE_URL = "http://localhost:30000/v1"
-    elif model == "qwen3-8B-SFT":
-        SGLANG_BASE_URL = "http://localhost:30001/v1"
-    elif model == "qwen3-8B-RL":
-        SGLANG_BASE_URL = "http://localhost:30002/v1"
-    elif model == "qwen3-4B":
-        SGLANG_BASE_URL = "http://localhost:30003/v1"
-    elif model == "qwen3-4B-SFT":
-        SGLANG_BASE_URL = "http://localhost:30004/v1"
-    elif model == "qwen3-4B-RL":
-        SGLANG_BASE_URL = "http://localhost:30005/v1"
-    elif model == "qwen3-8B-Base":
-        SGLANG_BASE_URL = "http://localhost:30006/v1"
+    if base_url is not None:
+        SGLANG_BASE_URL = base_url
+    else:
+        # 处理SGLang 配置
+        if model == "qwen3-8B":
+            SGLANG_BASE_URL = "http://localhost:30000/v1"
+        elif model == "qwen3-8B-SFT":
+            SGLANG_BASE_URL = "http://localhost:30001/v1"
+        elif model == "qwen3-8B-RL":
+            SGLANG_BASE_URL = "http://localhost:30002/v1"
+        elif model == "qwen3-4B":
+            SGLANG_BASE_URL = "http://localhost:30003/v1"
+        elif model == "qwen3-4B-SFT":
+            SGLANG_BASE_URL = "http://localhost:30004/v1"
+        elif model == "qwen3-4B-RL":
+            SGLANG_BASE_URL = "http://localhost:30005/v1"
+        elif model == "qwen3-8B-Base":
+            SGLANG_BASE_URL = "http://localhost:30006/v1"
 
-    # if model == "qwen3-8B-SFT-checkpoint90":
-    #     SGLANG_BASE_URL = "http://localhost:30010/v1"
-    # elif model == "qwen3-8B-SFT-checkpoint105":
-    #     SGLANG_BASE_URL = "http://localhost:30011/v1"
-    # elif model == "qwen3-8B-SFT-checkpoint120":
-    #     SGLANG_BASE_URL = "http://localhost:30012/v1"
-    # elif model == "qwen3-8B-SFT-checkpoint135":
-    #     SGLANG_BASE_URL = "http://localhost:30013/v1"
-    # elif model == "qwen3-8B-SFT-checkpoint150":
-    #     SGLANG_BASE_URL = "http://localhost:30014/v1"
+        # if model == "qwen3-8B-SFT-checkpoint90":
+        #     SGLANG_BASE_URL = "http://localhost:30010/v1"
+        # elif model == "qwen3-8B-SFT-checkpoint105":
+        #     SGLANG_BASE_URL = "http://localhost:30011/v1"
+        # elif model == "qwen3-8B-SFT-checkpoint120":
+        #     SGLANG_BASE_URL = "http://localhost:30012/v1"
+        # elif model == "qwen3-8B-SFT-checkpoint135":
+        #     SGLANG_BASE_URL = "http://localhost:30013/v1"
+        # elif model == "qwen3-8B-SFT-checkpoint150":
+        #     SGLANG_BASE_URL = "http://localhost:30014/v1"
 
-    # if model == "qwen3-8B-RL-20251201-0000-checkpoint-100":
-    #     SGLANG_BASE_URL = "http://localhost:30020/v1"
+        # if model == "qwen3-8B-RL-20251201-0000-checkpoint-100":
+        #     SGLANG_BASE_URL = "http://localhost:30020/v1"
 
-    # if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300":
-    #     SGLANG_BASE_URL = "http://localhost:30030/v1"
-    # elif model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
-    #     SGLANG_BASE_URL = "http://localhost:30031/v1"
-    
-    # if model == "qwen3-8B-Base-SFT-All-Data-1208-1700-checkpoint-59":
-    #     SGLANG_BASE_URL = "http://localhost:30040/v1"
+        # if model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-300":
+        #     SGLANG_BASE_URL = "http://localhost:30030/v1"
+        # elif model =="qwen3-8B-RL-gsm8k-20251204-2120-checkpoint-60":
+        #     SGLANG_BASE_URL = "http://localhost:30031/v1"
+        
+        # if model == "qwen3-8B-Base-SFT-All-Data-1208-1700-checkpoint-59":
+        #     SGLANG_BASE_URL = "http://localhost:30040/v1"
 
-    # if model == "qwen3-8B-Base-SFT-All-Data-1208-2230":
-    #     SGLANG_BASE_URL = "http://localhost:30050/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-15":
-    #      SGLANG_BASE_URL = "http://localhost:30051/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-30":
-    #      SGLANG_BASE_URL = "http://localhost:30052/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-45":
-    #      SGLANG_BASE_URL = "http://localhost:30053/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-60":
-    #      SGLANG_BASE_URL = "http://localhost:30054/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-75":
-    #      SGLANG_BASE_URL = "http://localhost:30055/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-90":
-    #      SGLANG_BASE_URL = "http://localhost:30056/v1"
-    # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-105":
-    #      SGLANG_BASE_URL = "http://localhost:30057/v1"
+        # if model == "qwen3-8B-Base-SFT-All-Data-1208-2230":
+        #     SGLANG_BASE_URL = "http://localhost:30050/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-15":
+        #      SGLANG_BASE_URL = "http://localhost:30051/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-30":
+        #      SGLANG_BASE_URL = "http://localhost:30052/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-45":
+        #      SGLANG_BASE_URL = "http://localhost:30053/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-60":
+        #      SGLANG_BASE_URL = "http://localhost:30054/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-75":
+        #      SGLANG_BASE_URL = "http://localhost:30055/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-90":
+        #      SGLANG_BASE_URL = "http://localhost:30056/v1"
+        # elif model == "qwen3-8B-Base-SFT-All-Data-1208-2230-checkpoint-105":
+        #      SGLANG_BASE_URL = "http://localhost:30057/v1"
     
 
     SGLANG_API_KEY = "sglang"  # 本地服务通常只需占位符
@@ -199,6 +202,6 @@ async def run_inference(dataset_path, system_prompt, query_field, answer_field, 
 
 
 # 程序主入口
-def inference_sglang(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens):
+def inference_sglang(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens, base_url=None):
 
-    asyncio.run(run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens))
+    asyncio.run(run_inference(dataset_path, system_prompt, query_field, answer_field, output_path, model, temperature, max_tokens, base_url))

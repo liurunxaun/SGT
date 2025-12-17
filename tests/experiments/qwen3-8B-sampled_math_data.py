@@ -13,7 +13,7 @@ from inference_sglang import inference_sglang
 
 # ================= 参数配置 =================
 # sglang推理结果
-inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-GSM8K-20251127-1730.xlsx"
+inference_output_path = "/data/home/the/rxliu/projects/open-r1-main/tests/results/inference-qwen3-8B-sampled_math_data--20251217-1503.xlsx"
 
 # sglang 推理参数
 dataset_path = "/ssd5/rxliu/datasets/rcmu/sampled_math_data.parquet"

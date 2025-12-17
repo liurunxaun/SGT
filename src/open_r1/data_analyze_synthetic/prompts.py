@@ -379,15 +379,9 @@ if __name__ == "__main__":
 '''
 
 
-    base_prompt = """You are a helpful AI Assistant specialized in solving programming problems.
-You will produce a correct and efficient Python solution.
+    base_prompt = """You are a helpful AI Assistant specialized in solving programming problems.You will produce a correct and efficient Python solution.
 
-You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <think>
-  ...
-  </think>
-  <answer>
-  ...
-  </answer>
+  You first think about the reasoning process as an internal monologue and then provide the user with the answer. Respond in the following format: <tool_call>...<tool_call><answer>...</answer></answer>
 
   Besides, you must comply with below requirements:
   1.During the <think> phase you should organize the chain of thought using below tags:
@@ -494,7 +488,7 @@ def construct_user_prompt(question, style, test_info=None):
     # 3. 针对 Online Judge (OJ) 的特殊处理
     if style == 'online_judge':
         content += "\n\n### Format: Generate an executable Python function to solve the given problem. The function should read input from `stdin` and write the output to `stdout`. Do not directly test on the sample inputs. Ensure that when the Python program runs, it reads the inputs, executes the algorithm, and writes the output to `stdout`."
-    
+        content += "\n\n### Input Constraints:\n1. Use `input()` to read line-by-line if possible.\n2. If using `sys.stdin.read()`, you MUST use `.split()` (without arguments) to automatically handle all whitespace and newlines. \n3. **NEVER** use `.split('\\n')` or manual string parsing, as this causes errors with trailing newlines."
     # 4. 结尾引导
     content += "\n\nAssistant Response:"
     
