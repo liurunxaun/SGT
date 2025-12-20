@@ -19,16 +19,16 @@ system_prompt: ""
 
 # GRPO trainer config
 bf16: true
-use_vllm: true
+use_vllm: false
 
-do_eval: true
+do_eval: false
 eval_strategy: "steps"
 eval_steps: 20
-eval_on_start: true
+eval_on_start: false
 
 wandb_project: qwen3-8B-RL-20251220-2130
 run_name: qwen3-8B-RL-20251220-2130
-output_dir: /ssd5/rxliu/models/output/qwen3-8B-RL-20251220-2130
+output_dir: /ssd5/rxliu/models/output/debug
 overwrite_output_dir: true
 
 learning_rate: 1.0e-06

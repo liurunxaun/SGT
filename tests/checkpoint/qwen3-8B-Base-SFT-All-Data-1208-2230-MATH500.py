@@ -16,17 +16,17 @@ import time as time_module # 导入time模块用于获取当前时间
 # ================= 参数配置 =================
 
 # 循环和结果目录参数
-REPETITIONS = 3 # <--- 新增：重复执行的次数
+REPETITIONS = 16 # <--- 新增：重复执行的次数
 
 # Sglang 推理参数
 dataset_name = "MATH500"
 dataset_path = "/ssd5/rxliu/datasets/MATH-500/test.parquet"
 query_field = "problem"
-model = "qwen3-8B-Base-SFT-DeepScaleR-1215-1100-checkpoint-80"
+model = "qwen3-8B-Base-SFT-DeepScaleR-1215-1100-checkpoint-160"
 temperature = 0.6
 max_tokens = 8192
 system_prompt = ""
-base_url = "http://localhost:30080/v1"
+base_url = "http://localhost:30013/v1"
 # llm judge 配置
 API_KEY = "sk-8d445207b1ab47efb83069ccc1b845b6"
 API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
