@@ -14,7 +14,7 @@ project_path = os.path.dirname(folder1_path)
 sys.path.append(project_path)
 
 
-async def generate_sglang(client: AsyncOpenAI, messages: List[Dict], temperature: float = 0.6, max_tokens: int = 32768) -> str:
+async def generate_sglang(client: AsyncOpenAI, messages: List[Dict], temperature: float = 0.6, max_tokens: int = 32000) -> str:
     """调用 SGLang API 生成回复"""
     try:
         response = await client.chat.completions.create(
@@ -22,6 +22,7 @@ async def generate_sglang(client: AsyncOpenAI, messages: List[Dict], temperature
             messages = messages,
             temperature = temperature,
             top_p = 0.95,
+            timeout = 600.0,
             max_tokens = max_tokens,
             extra_body={
                 "chat_template_kwargs": {"enable_thinking": True}, # 默认启用思考模式，对应 tokenizer.apply_chat_template(enable_thinking=True)

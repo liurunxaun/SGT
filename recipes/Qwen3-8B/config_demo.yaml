@@ -3,6 +3,7 @@ model_name_or_path: /ssd5/rxliu/models/output/qwen3-8B-Base-SFT-DeepScaleR-1215-
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
+resume_from_checkpoint: /ssd5/rxliu/models/output/qwen3-8B-RL-20251220-2130/checkpoint-380
 
 
 # Data training arguments
@@ -66,7 +67,7 @@ report_to:
 - wandb
 
 save_strategy: "steps"
-save_steps: 20
+save_steps: 40
 # save_total_limit: 2
 seed: 42
 temperature: 0.6
@@ -77,21 +78,21 @@ warmup_ratio: 0
 
 reward_funcs:
 - accuracy
-- graph
+# - graph
 - format
 reward_weights:
 - 1.0
-- 0.5
+# - 0.5
 - 0.1
-graph_reward_funcs:
-- reachability
-- connectivity
-- label_structure
-- effective_subgraph_information_proportion
-- search
-graph_reward_weights:
-- 3.0
-- 2.0
-- 1.0
-- 1.0
-- 1.0
+# graph_reward_funcs:
+# - reachability
+# - connectivity
+# - label_structure
+# - effective_subgraph_information_proportion
+# - search
+# graph_reward_weights:
+# - 3.0
+# - 2.0
+# - 1.0
+# - 1.0
+# - 1.0
